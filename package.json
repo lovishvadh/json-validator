@@ -1,17 +1,23 @@
 {
   "name": "json-validator",
   "version": "1.0.0",
-  "description": "A JSON validator tool with detailed error reporting",
+  "description": "A JSON validator and comparison tool with detailed error reporting",
   "type": "module",
-  "main": "validator.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node validator.js",
+    "start": "node server.js",
+    "dev": "node server.js",
+    "validator": "node validator.js",
+    "comparator": "node comparator.js",
     "test": "node validator.js"
   },
   "dependencies": {
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "deep-diff": "^1.0.2"
   },
-  "keywords": ["json", "validator", "error-reporting"],
+  "keywords": ["json", "validator", "comparator", "error-reporting", "diff"],
   "author": "Your Name",
   "license": "MIT"
 } 

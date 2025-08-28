@@ -1,178 +1,286 @@
-# JSON Validator Tool
+# JSON Comparison Tool
 
-A comprehensive JSON validation tool with detailed error reporting and GitHub Actions integration for automated validation on pull requests.
+A powerful JSON validation and comparison tool with a modern web interface and backend proxy to handle CORS issues.
 
-## Features
+## 🚀 Features
 
-- ✅ **Detailed Error Reporting**: Shows exact line numbers, positions, and helpful suggestions
-- 🔍 **Duplicate Key Detection**: Identifies duplicate keys at the same level (ignores valid duplicates in arrays)
-- 📍 **Context-Aware**: Provides specific context for each error type
-- 🤖 **GitHub Actions Integration**: Automatically validates JSON files on pull requests
-- 💬 **PR Comments**: Adds detailed comments to PRs with validation results
+### **JSON Validation**
+- Detailed error reporting with line numbers and context
+- Support for local files and remote URLs
+- Batch processing of multiple JSON files
+- User-friendly error messages
 
-## Installation
+### **JSON Comparison**
+- **Multiple Input Sources**: URL, Local File, Paste JSON
+- **Dual View Modes**: Full JSON comparison and Differences only
+- **Visual Diff Highlighting**: Color-coded changes with syntax highlighting
+- **CORS-Free**: Backend proxy handles cross-origin requests
+- **Real-time Statistics**: Count of added, removed, and modified elements
 
-1. Clone the repository:
+### **Web Interface**
+- Modern, responsive design
+- Interactive controls and filters
+- Synchronized scrolling between panels
+- Mobile-friendly layout
+
+## 📦 Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd json-validator
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Start the server**:
+   ```bash
+   npm start
+   ```
+
+4. **Open your browser** and navigate to:
+   ```
+   http://localhost:3000
+   ```
+
+## 🛠 Usage
+
+### **Web Interface (Recommended)**
+
+1. **Open the web interface** at `http://localhost:3000`
+2. **Choose input sources** for both JSONs:
+   - **URL**: Enter a web URL containing JSON
+   - **Local File**: Upload a JSON file from your computer
+   - **Paste JSON**: Copy and paste JSON content directly
+3. **Click "Compare JSONs"** to see the differences
+4. **Switch between views**:
+   - **Full JSON Comparison**: Side-by-side view with highlighting
+   - **Differences Only**: Focused view of changes only
+
+### **Command Line Tools**
+
+#### **JSON Validator**
 ```bash
-git clone <your-repo-url>
-cd json-validator
+npm run validator
 ```
+Validates JSON files and reports detailed errors.
 
-2. Install dependencies:
+#### **JSON Comparator**
 ```bash
-npm install
+npm run comparator
 ```
+Compares JSON files from configured URLs and generates HTML reports.
 
-3. Configure the validator by editing `config.js`:
-```javascript
-export const REPO_PATH = './path/to/your/json/files/';
-export const ORIGIN_URL = 'https://your-api-base-url.com/';
-export const MARKET = 'your-market-identifier';
-```
+## 🔧 Configuration
 
-## Usage
+### **Environment Variables**
+- `PORT`: Server port (default: 3000)
 
-### Local Validation
+### **API Endpoints**
 
-Run the validator locally:
+#### **Health Check**
 ```bash
-node validator.js
+GET /api/health
+```
+Returns server status and version information.
+
+#### **Fetch JSON from URL**
+```bash
+GET /api/fetch-json?url=<encoded-url>
+```
+Fetches JSON from a URL, handling CORS issues.
+
+#### **Compare JSON Sources**
+```bash
+POST /api/compare-json
+Content-Type: application/json
+
+{
+  "source1": {
+    "type": "url|json",
+    "data": "url-or-json-content"
+  },
+  "source2": {
+    "type": "url|json", 
+    "data": "url-or-json-content"
+  }
+}
 ```
 
-### GitHub Actions Integration
+## 🌐 CORS Solution
 
-The tool automatically runs on pull requests when:
-- JSON files are modified
-- The validator script is updated
-- The workflow file is modified
+The backend proxy solves CORS issues by:
 
-## Error Types Detected
+1. **Server-side fetching**: URLs are fetched from the server, not the browser
+2. **Proper headers**: Sets appropriate User-Agent and Accept headers
+3. **Error handling**: Provides detailed error messages for various failure scenarios
+4. **Timeout protection**: 10-second timeout to prevent hanging requests
 
-### 1. Syntax Errors
-- Missing commas
-- Extra commas
-- Missing quotes
-- Extra quotes
-- Unclosed brackets/braces
-- Invalid number formats
+## 📊 Comparison Features
 
-### 2. Duplicate Keys
-- Duplicate keys at the same level (invalid)
-- Allows duplicate keys in different array elements (valid)
+### **Visual Indicators**
+- 🔵 **Blue**: Added elements
+- 🔴 **Red**: Removed elements  
+- 🟡 **Yellow**: Modified elements
 
-### 3. File Access Issues
-- Missing files
-- Permission errors
-- Network connectivity issues
+### **Syntax Highlighting**
+- **Strings**: Blue color
+- **Numbers**: Orange color
+- **Booleans**: Orange color
+- **Null values**: Gray italic
+- **Brackets/Punctuation**: Gray color
 
-## Sample Output
+### **Interactive Controls**
+- **Filter buttons**: Show only specific change types
+- **Tab switching**: Switch between view modes
+- **Hover effects**: Highlight differences on mouse over
+- **Synchronized scrolling**: Both panels scroll together
 
-### Error Example:
-```
-❌ JSON Validation Error in config.json:
-   Error Type: DuplicateKeyError
-   Error Message: Duplicate key "debug" found at the same level
-   🔍 Duplicate Key Analysis:
-      Key "debug" appears 2 times at the same level
-      First occurrence: Line 6
-      Last occurrence: Line 8
-      All occurrences: Lines 6, 8
-      Parent context: inside "config"
-   Context:
-   >>> 6:     "debug": true,
-   💡 Suggestion: Remove all duplicate keys except the first one. Each key in a JSON object must be unique at the same level.
-```
+## 🔍 Use Cases
 
-### Success Example:
-```
-✅ config.json is a valid JSON.
-✅ data.json is a valid JSON.
-```
+### **API Testing**
+- Compare API responses between environments
+- Validate configuration changes
+- Debug environment-specific issues
 
-## GitHub Actions Workflow
+### **Configuration Management**
+- Track configuration changes over time
+- Validate deployment configurations
+- Identify configuration drift
 
-The workflow automatically:
+### **Data Migration**
+- Verify data integrity during transfers
+- Validate transformation logic
+- Document migration changes
 
-1. **Triggers** on pull requests with JSON file changes
-2. **Runs** the validation on all JSON files
-3. **Comments** on the PR with results:
-   - ❌ **Error Comments**: Detailed error information with suggestions
-   - ✅ **Success Comments**: Confirmation that all files are valid
-4. **Updates** existing comments when PR is updated
+### **Quality Assurance**
+- Automated regression testing
+- Visual difference identification
+- Comprehensive change documentation
 
-### Workflow Features
+## 🛠 Development
 
-- **Smart Commenting**: Updates existing comments instead of creating duplicates
-- **Detailed Error Reporting**: Shows all validation errors in PR comments
-- **Helpful Guidance**: Provides step-by-step instructions for fixing issues
-- **Automatic Re-validation**: Re-runs when PR is updated
-
-## Configuration
-
-### Local Configuration (`config.js`)
-
-```javascript
-// Path to local JSON files
-export const REPO_PATH = './data/';
-
-// Base URL for remote files (optional)
-export const ORIGIN_URL = 'https://api.example.com/';
-
-// Market identifier (optional)
-export const MARKET = 'us';
-```
-
-### GitHub Actions Configuration
-
-The workflow is configured in `.github/workflows/json-validation.yml` and includes:
-
-- Node.js 18 setup
-- Dependency installation
-- Validation execution
-- PR commenting with results
-
-## File Structure
-
+### **Project Structure**
 ```
 json-validator/
-├── validator.js              # Main validation script
-├── config.js                 # Configuration file
-├── package.json              # Dependencies and scripts
-├── .github/
-│   └── workflows/
-│       └── json-validation.yml  # GitHub Actions workflow
-├── README.md                 # This file
-└── test-files/              # Test JSON files
-    ├── valid-example.json
-    ├── invalid-example.json
-    └── array-test.json
+├── server.js              # Express server with proxy
+├── validator.js           # JSON validation tool
+├── comparator.js          # JSON comparison tool
+├── json-comparator-ui.html # Web interface
+├── config.js              # Configuration file
+├── package.json           # Dependencies and scripts
+└── README.md             # This file
 ```
 
-## Contributing
+### **Available Scripts**
+- `npm start`: Start the web server
+- `npm run dev`: Start in development mode
+- `npm run validator`: Run JSON validation
+- `npm run comparator`: Run JSON comparison
+- `npm test`: Run tests
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test with various JSON files
-5. Submit a pull request
+### **Dependencies**
+- **express**: Web server framework
+- **cors**: Cross-origin resource sharing
+- **axios**: HTTP client for fetching URLs
+- **deep-diff**: JSON difference detection
 
-## Troubleshooting
+## 🚀 Deployment
 
-### Common Issues
+### **Local Development**
+```bash
+npm install
+npm start
+```
 
-1. **Module Import Errors**: Ensure `"type": "module"` is in `package.json`
-2. **Permission Errors**: Check file permissions and paths in `config.js`
-3. **Network Errors**: Verify URLs and connectivity for remote files
-4. **GitHub Actions Failures**: Check workflow file syntax and permissions
+### **Production Deployment**
+```bash
+# Set environment variables
+export PORT=3000
 
-### Debug Mode
+# Install dependencies
+npm install --production
 
-Add debug logging by modifying the validator script or check the GitHub Actions logs for detailed error information.
+# Start server
+npm start
+```
 
-## License
+### **Docker Deployment**
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --production
+COPY . .
+EXPOSE 3000
+CMD ["npm", "start"]
+```
 
-MIT License - see LICENSE file for details.
+## 🔧 Troubleshooting
+
+### **Common Issues**
+
+#### **CORS Errors**
+- ✅ **Solution**: Use the web interface with backend proxy
+- ✅ **Alternative**: Use the command-line tools
+
+#### **URL Not Found**
+- Check if the URL is accessible
+- Verify the URL returns JSON content
+- Check network connectivity
+
+#### **Invalid JSON Format**
+- Validate JSON syntax using the validator tool
+- Check for missing commas, brackets, or quotes
+- Ensure proper JSON structure
+
+#### **Server Won't Start**
+- Check if port 3000 is available
+- Verify all dependencies are installed
+- Check Node.js version (requires 14+)
+
+### **Debug Mode**
+Enable detailed logging by setting environment variables:
+```bash
+export DEBUG=json-comparator:*
+npm start
+```
+
+## 📈 Performance
+
+### **Optimizations**
+- **Streaming comparison**: Processes large files efficiently
+- **Parallel processing**: Handles multiple requests simultaneously
+- **Caching**: Reduces redundant URL fetches
+- **Timeout protection**: Prevents hanging requests
+
+### **Limitations**
+- **File size**: Maximum 10MB for JSON content
+- **URL timeout**: 10-second timeout for URL requests
+- **Memory usage**: Large JSON files may impact performance
+
+## 🤝 Contributing
+
+1. **Fork the repository**
+2. **Create a feature branch**
+3. **Make your changes**
+4. **Add tests if applicable**
+5. **Submit a pull request**
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🆘 Support
+
+For questions, issues, or feature requests:
+- Create an issue in the repository
+- Check the troubleshooting section
+- Review the API documentation
 
 ---
 
-*This tool helps maintain JSON data quality across your project with automated validation and clear error reporting.*
+**Happy JSON comparing! 🎉**
