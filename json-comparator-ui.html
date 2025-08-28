@@ -780,31 +780,106 @@
             const jsonString = JSON.stringify(obj, null, 2);
             const lines = jsonString.split('\n');
             
-            return lines.map((line, lineIndex) => {
-                let diffClass = '';
-                let diffIndicator = '';
+            // Create a map of line ranges that should be highlighted
+            const lineRanges = new Map(); // lineIndex -> { start, end, type }
+            
+            // Helper function to find object boundaries
+            function findObjectBoundaries(lines, startLine) {
+                let braceCount = 0;
+                let inString = false;
+                let escapeNext = false;
+                let endLine = startLine;
                 
-                const trimmedLine = line.trim();
-                if (trimmedLine.includes('"')) {
-                    const keyMatch = trimmedLine.match(/"([^"]+)":/);
-                    if (keyMatch) {
-                        const key = keyMatch[1];
-                        for (const [path, diff] of diffMap.entries()) {
-                            const pathParts = path.split('.');
-                            const lastPart = pathParts[pathParts.length - 1];
-                            
-                            if (lastPart === key || path.includes(key)) {
-                                if (isOld && (diff.kind === 'D' || diff.kind === 'E')) {
-                                    diffClass = diff.kind === 'D' ? 'diff-removed' : 'diff-modified';
-                                    diffIndicator = `<div class="diff-indicator ${diff.kind === 'D' ? 'removed' : 'modified'}"></div>`;
-                                } else if (!isOld && (diff.kind === 'N' || diff.kind === 'E')) {
-                                    diffClass = diff.kind === 'N' ? 'diff-added' : 'diff-modified';
-                                    diffIndicator = `<div class="diff-indicator ${diff.kind === 'N' ? 'added' : 'modified'}"></div>`;
+                for (let i = startLine; i < lines.length; i++) {
+                    const line = lines[i];
+                    
+                    for (let j = 0; j < line.length; j++) {
+                        const char = line[j];
+                        
+                        if (escapeNext) {
+                            escapeNext = false;
+                            continue;
+                        }
+                        
+                        if (char === '\\') {
+                            escapeNext = true;
+                            continue;
+                        }
+                        
+                        if (char === '"' && !escapeNext) {
+                            inString = !inString;
+                            continue;
+                        }
+                        
+                        if (!inString) {
+                            if (char === '{' || char === '[') {
+                                braceCount++;
+                            } else if (char === '}' || char === ']') {
+                                braceCount--;
+                                if (braceCount === 0) {
+                                    endLine = i;
+                                    return { start: startLine, end: endLine };
                                 }
-                                break;
                             }
                         }
                     }
+                }
+                
+                return { start: startLine, end: startLine };
+            }
+            
+            // Process differences to find line ranges
+            for (const [path, diff] of diffMap.entries()) {
+                const pathParts = path.split('.');
+                const lastPart = pathParts[pathParts.length - 1];
+                
+                // Find the line that contains this key
+                for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+                    const line = lines[lineIndex];
+                    const keyMatch = line.match(/"([^"]+)":/);
+                    
+                    if (keyMatch && keyMatch[1] === lastPart) {
+                        let diffType = '';
+                        if (isOld && (diff.kind === 'D' || diff.kind === 'E')) {
+                            diffType = diff.kind === 'D' ? 'diff-removed' : 'diff-modified';
+                        } else if (!isOld && (diff.kind === 'N' || diff.kind === 'E')) {
+                            diffType = diff.kind === 'N' ? 'diff-added' : 'diff-modified';
+                        }
+                        
+                        if (diffType) {
+                            // For added/removed objects, highlight the entire object
+                            if (diff.kind === 'N' || diff.kind === 'D') {
+                                const boundaries = findObjectBoundaries(lines, lineIndex);
+                                for (let i = boundaries.start; i <= boundaries.end; i++) {
+                                    lineRanges.set(i, { 
+                                        type: diffType, 
+                                        kind: diff.kind,
+                                        isObject: true 
+                                    });
+                                }
+                            } else {
+                                // For modified values, just highlight the line
+                                lineRanges.set(lineIndex, { 
+                                    type: diffType, 
+                                    kind: diff.kind,
+                                    isObject: false 
+                                });
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            return lines.map((line, lineIndex) => {
+                const rangeInfo = lineRanges.get(lineIndex);
+                let diffClass = rangeInfo ? rangeInfo.type : '';
+                let diffIndicator = '';
+                
+                if (rangeInfo) {
+                    const indicatorType = rangeInfo.kind === 'N' ? 'added' : 
+                                        rangeInfo.kind === 'D' ? 'removed' : 'modified';
+                    diffIndicator = `<div class="diff-indicator ${indicatorType}"></div>`;
                 }
                 
                 let highlightedLine = line
