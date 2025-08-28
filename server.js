@@ -109,6 +109,9 @@ app.post('/api/compare-json', async (req, res) => {
                         return response.data;
                         
                     case 'json':
+                        if (typeof source.data !== 'string') {
+                            throw new Error('JSON data must be a string');
+                        }
                         return JSON.parse(source.data);
                         
                     default:
@@ -116,7 +119,7 @@ app.post('/api/compare-json', async (req, res) => {
                 }
             } catch (error) {
                 if (error.name === 'SyntaxError') {
-                    throw new Error('Invalid JSON format');
+                    throw new Error(`Invalid JSON format: ${error.message}`);
                 }
                 throw error;
             }
