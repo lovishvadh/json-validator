@@ -928,27 +928,36 @@
                         type: source1Type === 'url' ? 'url' : 'json',
                         data: source1Type === 'url' ? 
                             document.getElementById(source1Id).value.trim() : 
-                            await getJSONFromSource(source1Type, source1Id)
+                            JSON.stringify(await getJSONFromSource(source1Type, source1Id))
                     };
                     
                     const source2 = {
                         type: source2Type === 'url' ? 'url' : 'json',
                         data: source2Type === 'url' ? 
                             document.getElementById(source2Id).value.trim() : 
-                            await getJSONFromSource(source2Type, source2Id)
+                            JSON.stringify(await getJSONFromSource(source2Type, source2Id))
                     };
 
                     // Use backend comparison API
+                    const requestBody = { source1, source2 };
+                    console.log('Sending request to backend:', {
+                        source1Type: source1.type,
+                        source2Type: source2.type,
+                        source1DataLength: source1.data.length,
+                        source2DataLength: source2.data.length
+                    });
+
                     const response = await fetch('/api/compare-json', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ source1, source2 })
+                        body: JSON.stringify(requestBody)
                     });
 
                     if (!response.ok) {
                         const errorData = await response.json();
+                        console.error('Backend error:', errorData);
                         throw new Error(errorData.error || 'Comparison failed');
                     }
 

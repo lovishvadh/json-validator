@@ -4,7 +4,7 @@
   "description": "A JSON file to test duplicate key detection in arrays",
   "headers": [
     {
-      "desc": "13
+      "desc": "123",
       "type": "text"
     },
     {
