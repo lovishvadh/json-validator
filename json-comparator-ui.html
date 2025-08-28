@@ -860,11 +860,15 @@
                         if (!url) {
                             throw new Error('Please enter a URL');
                         }
-                        const response = await fetch(url);
+                        
+                        // Use backend proxy to avoid CORS issues
+                        const response = await fetch(`/api/fetch-json?url=${encodeURIComponent(url)}`);
                         if (!response.ok) {
-                            throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+                            const errorData = await response.json();
+                            throw new Error(errorData.error || `Failed to fetch URL: ${response.status}`);
                         }
-                        return await response.json();
+                        const result = await response.json();
+                        return result.data;
                         
                     case 'file':
                         const fileInput = document.getElementById(sourceId);
@@ -915,28 +919,70 @@
             resultsSection.style.display = 'none';
 
             try {
-                // Get JSON from both sources
-                const [json1, json2] = await Promise.all([
-                    getJSONFromSource(source1Type, source1Id),
-                    getJSONFromSource(source2Type, source2Id)
-                ]);
+                let json1, json2, differences, stats;
 
-                // Compare JSONs
-                const differences = deepDiff(json1, json2);
+                // Use backend API for comparison if at least one source is URL
+                if (source1Type === 'url' || source2Type === 'url') {
+                    // Prepare sources for backend API
+                    const source1 = {
+                        type: source1Type === 'url' ? 'url' : 'json',
+                        data: source1Type === 'url' ? 
+                            document.getElementById(source1Id).value.trim() : 
+                            await getJSONFromSource(source1Type, source1Id)
+                    };
+                    
+                    const source2 = {
+                        type: source2Type === 'url' ? 'url' : 'json',
+                        data: source2Type === 'url' ? 
+                            document.getElementById(source2Id).value.trim() : 
+                            await getJSONFromSource(source2Type, source2Id)
+                    };
+
+                    // Use backend comparison API
+                    const response = await fetch('/api/compare-json', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ source1, source2 })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error || 'Comparison failed');
+                    }
+
+                    const result = await response.json();
+                    json1 = result.json1;
+                    json2 = result.json2;
+                    differences = result.differences;
+                    stats = result.stats;
+                } else {
+                    // Use client-side comparison for file/paste combinations
+                    const [json1Data, json2Data] = await Promise.all([
+                        getJSONFromSource(source1Type, source1Id),
+                        getJSONFromSource(source2Type, source2Id)
+                    ]);
+
+                    json1 = json1Data;
+                    json2 = json2Data;
+                    differences = deepDiff(json1, json2);
+
+                    stats = {
+                        added: differences ? differences.filter(d => d.kind === 'N').length : 0,
+                        removed: differences ? differences.filter(d => d.kind === 'D').length : 0,
+                        modified: differences ? differences.filter(d => d.kind === 'E').length : 0
+                    };
+                }
 
                 // Create diff map
                 const diffMap = new Map();
-                differences.forEach(diff => {
-                    const path = diff.path ? diff.path.join('.') : '';
-                    diffMap.set(path, diff);
-                });
-
-                // Calculate statistics
-                const stats = {
-                    added: differences.filter(d => d.kind === 'N').length,
-                    removed: differences.filter(d => d.kind === 'D').length,
-                    modified: differences.filter(d => d.kind === 'E').length
-                };
+                if (differences) {
+                    differences.forEach(diff => {
+                        const path = diff.path ? diff.path.join('.') : '';
+                        diffMap.set(path, diff);
+                    });
+                }
 
                 // Update statistics
                 const statsElement = document.getElementById('stats');
@@ -960,13 +1006,13 @@
                 document.getElementById('json2Content').innerHTML = renderJsonWithHighlights(json2, diffMap, false);
 
                 // Render differences only view
-                document.getElementById('removedContent').innerHTML = createTreeView(differences.filter(d => d.kind === 'D' || d.kind === 'E'));
-                document.getElementById('addedContent').innerHTML = createTreeView(differences.filter(d => d.kind === 'N' || d.kind === 'E'));
+                document.getElementById('removedContent').innerHTML = createTreeView(differences ? differences.filter(d => d.kind === 'D' || d.kind === 'E') : []);
+                document.getElementById('addedContent').innerHTML = createTreeView(differences ? differences.filter(d => d.kind === 'N' || d.kind === 'E') : []);
 
                 // Show results
                 resultsSection.style.display = 'block';
                 
-                if (differences.length === 0) {
+                if (!differences || differences.length === 0) {
                     showSuccess('No differences found. The JSON files are identical.');
                 } else {
                     showSuccess(`Found ${differences.length} differences between the JSON files.`);
