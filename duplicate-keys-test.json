@@ -1,0 +1,17 @@
+{
+  "name": "Product with Duplicate Keys",
+  "version": "1.0.0",
+  "description": "A JSON file with duplicate keys to test detection",
+  "name": "Another Product Name",
+  "price": 29.99,
+  "category": "Electronics",
+  "price": 39.99,
+  "features": [
+    "feature1",
+    "feature2"
+  ],
+  "features": [
+    "feature3",
+    "feature4"
+  ]
+} 

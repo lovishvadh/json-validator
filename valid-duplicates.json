@@ -1,0 +1,35 @@
+{
+  "name": "Valid Duplicates Test",
+  "version": "1.0.0",
+  "description": "A JSON file with valid duplicate keys at different levels",
+  "config": {
+    "debug": true,
+    "timeout": 5000,
+    "retries": 3,
+    "nested": {
+      "name": "This is valid - different level"
+    }
+  },
+  "data": {
+    "users": [
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com",
+        "preferences": {
+          "name": "This is also valid - different level"
+        }
+      },
+      {
+        "id": 2,
+        "name": "Jane Smith",
+        "email": "jane@example.com"
+      }
+    ]
+  },
+  "settings": {
+    "theme": "dark",
+    "language": "en",
+    "notifications": true
+  }
+} 

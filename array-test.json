@@ -1,0 +1,38 @@
+{
+  "name": "Array Test",
+  "version": "1.0.0",
+  "description": "A JSON file to test duplicate key detection in arrays",
+  "headers": [
+    {
+      "desc": "123",
+      "type": "text"
+    },
+    {
+      "desc": "234",
+      "type": "number"
+    },
+    {
+      "desc": "345",
+      "type": "boolean"
+    }
+  ],
+  "data": {
+    "users": [
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      {
+        "id": 2,
+        "name": "Jane Smith",
+        "email": "jane@example.com"
+      }
+    ]
+  },
+  "config": {
+    "debug": true,
+    "timeout": 5000,
+    "retries": 3
+  }
+} 

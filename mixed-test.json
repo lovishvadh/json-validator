@@ -1,0 +1,35 @@
+{
+  "name": "Mixed Test",
+  "version": "1.0.0",
+  "description": "A JSON file with both valid and invalid duplicates",
+  "headers": [
+    {
+      "desc": "123",
+      "type": "text"
+    },
+    {
+      "desc": "234",
+      "type": "number"
+    }
+  ],
+  "config": {
+    "debug": true,
+    "timeout": 5000,
+    "debug": false,
+    "retries": 3
+  },
+  "data": {
+    "users": [
+      {
+        "id": 1,
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      {
+        "id": 2,
+        "name": "Jane Smith",
+        "email": "jane@example.com"
+      }
+    ]
+  }
+} 
