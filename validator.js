@@ -2,10 +2,6 @@ import fs from 'fs';
 
 import path from 'path';
 
-import axios from 'axios';
-
-import { REPO_PATH, ORIGIN_URL, MARKET } from './config.js';
-
  
 
 function validateJSON(content, filename) {
@@ -296,45 +292,16 @@ function getParentContext(lines, currentLineIndex, bracketStack) {
 
  
 
-function getAllJSONFiles(repoPath) {
-
-    let jsonFiles = [];
-
-    function readFolder(dir, relativePath="") {
-
-        const files = fs.readdirSync(dir);
-
-        files.forEach(file => {
-
-            const fullPath = path.join(dir, file);
-
-            const fileRelativePath = path.join(relativePath, file)
-
-            if (fs.statSync(fullPath).isDirectory()) {
-
-                readFolder(fullPath, fileRelativePath);
-
-            } else if (file.endsWith('.json')) {
-
-                jsonFiles.push(fileRelativePath);
-
-            }
-
-        });
-
-    }
-
-    readFolder(repoPath);
-
-    return jsonFiles;
-
-}
 
  
 
-function validateLocalJSON(repoPath, filenames = []) {
-    const files = filenames.length ? filenames : fs.readdirSync(repoPath).filter(f => f.endsWith('.json'));
-    files.forEach(file => {
+function validateLocalJSON(repoPath, filenames) {
+    if (!filenames || filenames.length === 0) {
+        console.log("❌ No files provided for validation.");
+        return;
+    }
+    
+    filenames.forEach(file => {
         const filePath = path.join(repoPath, file);
         try {
             const content = fs.readFileSync(filePath, 'utf-8');
@@ -351,7 +318,7 @@ function validateLocalJSON(repoPath, filenames = []) {
                 console.error(`   💡 Suggestion: Permission denied. Check file permissions.`);
             } else if (err.code === 'EISDIR') {
                 console.error(`   💡 Suggestion: The path is a directory, not a file.`);
-            } else {
+    } else {
                 console.error(`   💡 Suggestion: Check if the file exists and is readable.`);
             }
             console.error(''); // Add spacing for readability
@@ -359,103 +326,22 @@ function validateLocalJSON(repoPath, filenames = []) {
     });
 }
 
-async function validateJSONFromBaseURL(baseURL, filenames) {
-    for (const filename of filenames) {
-        const url = `${baseURL}/${filename}`;
-        try {
-            const response = await axios.get(url);
-            validateJSON(JSON.stringify(response.data), filename);
-        } catch (err) {
-            console.error(`\n❌ Network Error for ${filename}:`);
-            console.error(`   URL: ${url}`);
-            console.error(`   Error Type: ${err.name}`);
-            
-            if (err.response) {
-                // Server responded with error status
-                console.error(`   HTTP Status: ${err.response.status} ${err.response.statusText}`);
-                console.error(`   Error Message: ${err.message}`);
-                
-                if (err.response.status === 404) {
-                    console.error(`   💡 Suggestion: The file was not found at the specified URL.`);
-                } else if (err.response.status === 403) {
-                    console.error(`   💡 Suggestion: Access forbidden. Check if authentication is required.`);
-                } else if (err.response.status >= 500) {
-                    console.error(`   💡 Suggestion: Server error. Try again later.`);
-                }
-            } else if (err.request) {
-                // Request was made but no response received
-                console.error(`   Error Message: No response received from server`);
-                console.error(`   💡 Suggestion: Check your internet connection and try again.`);
-            } else {
-                // Something else happened
-                console.error(`   Error Message: ${err.message}`);
-                console.error(`   💡 Suggestion: Check the URL format and network connectivity.`);
-            }
-            console.error(''); // Add spacing for readability
-        }
-    }
-}
 
  
 
 async function main() {
-
-    const repoPath = REPO_PATH; // Link to local JSONs repo
-
-    const market = MARKET;
-
-    const baseURL = ORIGIN_URL; // Base URL for e1/e2/e3
-
-    console.log("\n📂 Getting all JSON files from subfolders...");
-
- 
-
-    const allFiles = getAllJSONFiles(repoPath + market);
-
- 
-
-    if(!market) {
-
-        console.log("\n❌ set MARKET in config.js");
-
-        return;
-
+    // Get JSON files from command line arguments
+    const args = process.argv.slice(2);
+    
+    if (args.length === 0) {
+        console.log("❌ No JSON files provided for validation.");
+        console.log("Usage: node validator.js <file1.json> <file2.json> ...");
+        process.exit(1);
     }
-
- 
-
-    if(repoPath) {
-
-        // Comment if you dont want to validate Local JSON files
-
-        console.log("\n🖥 Validating JSON Files from Local Folder...");
-
-        await validateLocalJSON(repoPath + market, allFiles);
-
-    } else {
-
-        console.log("\n❌ set repo path in config.js");
-
-    }
-
- 
-
-    if(baseURL) {
-
-        // // Comment if you dont want to validate URL files
-
-        console.log("\n🌍 Validating JSON Files from Base URL...");
-
-        await validateJSONFromBaseURL(baseURL + market, allFiles);
-
-    } else {
-
-        console.log("\n❌ set origin url in config.js");
-
-    }
-
- 
-
+    
+    // Validate the specified JSON files
+    console.log("\n🔍 Validating JSON files from commit...");
+    await validateLocalJSON('.', args);
 }
 
  

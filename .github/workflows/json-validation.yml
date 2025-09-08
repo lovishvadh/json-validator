@@ -30,12 +30,41 @@ jobs:
     - name: Install dependencies
       run: npm install
       
+    - name: Find JSON files in commit
+      id: find-json
+      run: |
+        # Find all JSON files that were changed in this commit
+        echo "JSON files found in this commit:"
+        CHANGED_JSON_FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.json$' || echo "")
+        
+        if [ -z "$CHANGED_JSON_FILES" ]; then
+          echo "No JSON files changed in this commit."
+          # If no JSON files changed, validate all JSON files in the repository
+          echo "Validating all JSON files in the repository..."
+          ALL_JSON_FILES=$(find . -name "*.json" -not -path "./node_modules/*" -not -path "./.git/*" | tr '\n' ' ')
+          echo "json_files=$ALL_JSON_FILES" >> $GITHUB_OUTPUT
+        else
+          echo "$CHANGED_JSON_FILES"
+          # Create a list of JSON files for validation
+          JSON_FILES=$(echo "$CHANGED_JSON_FILES" | tr '\n' ' ')
+          echo "json_files=$JSON_FILES" >> $GITHUB_OUTPUT
+        fi
+        
     - name: Run JSON validation
       id: validation
       run: |
-        # Run the validator and capture output
-        node validator.js > validation-output.txt 2>&1
-        echo "validation_exit_code=$?" >> $GITHUB_OUTPUT
+        # Get the list of JSON files from the previous step
+        JSON_FILES="${{ steps.find-json.outputs.json_files }}"
+        
+        if [ -z "$JSON_FILES" ]; then
+            echo "No JSON files found in this commit."
+            echo "validation_exit_code=0" >> $GITHUB_OUTPUT
+        else
+            # Run validation on each JSON file
+            echo "Validating JSON files: $JSON_FILES"
+            node validator.js $JSON_FILES > validation-output.txt 2>&1
+            echo "validation_exit_code=$?" >> $GITHUB_OUTPUT
+        fi
         
     - name: Process validation results
       id: process-results
