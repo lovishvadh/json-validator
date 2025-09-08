@@ -16,6 +16,7 @@
     "debug": true,
     "timeout": 5000,
     "debug": false,
+    "debug": false,
     "retries": 3
   },
   "data": {

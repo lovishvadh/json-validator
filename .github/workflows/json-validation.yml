@@ -30,9 +30,20 @@ jobs:
     - name: Install dependencies
       run: npm install
       
+    - name: Start proxy server
+      run: |
+        # Start the proxy server in the background
+        node proxy-server.js &
+        sleep 5  # Wait for server to start
+        echo "Proxy server started"
+        
     - name: Run JSON validation
       id: validation
       run: |
+        # Set environment variables for proxy usage
+        export USE_PROXY=true
+        export PROXY_URL=http://localhost:3000
+        
         # Run the validator and capture output
         node validator.js > validation-output.txt 2>&1
         echo "validation_exit_code=$?" >> $GITHUB_OUTPUT

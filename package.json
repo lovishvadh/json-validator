@@ -8,6 +8,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "validator": "node validator.js",
+    "validator-with-proxy": "node start-validator.js",
+    "proxy": "node proxy-server.js",
     "comparator": "node comparator.js",
     "test": "node validator.js"
   },
