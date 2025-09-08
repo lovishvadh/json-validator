@@ -17,12 +17,6 @@ A powerful JSON validation and comparison tool with a modern web interface and b
 - **CORS-Free**: Backend proxy handles cross-origin requests
 - **Real-time Statistics**: Count of added, removed, and modified elements
 
-### **CORS Proxy Server**
-- **CORS-Free Requests**: Handles cross-origin requests for remote JSON files
-- **Error Handling**: Comprehensive error reporting for network issues
-- **Health Monitoring**: Built-in health check endpoint
-- **Flexible Configuration**: Environment variable support for proxy settings
-
 ### **Web Interface**
 - Modern, responsive design
 - Interactive controls and filters

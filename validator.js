@@ -360,31 +360,11 @@ function validateLocalJSON(repoPath, filenames = []) {
 }
 
 async function validateJSONFromBaseURL(baseURL, filenames) {
-    // Check if we should use proxy server
-    const useProxy = process.env.USE_PROXY === 'true' || process.env.PROXY_URL;
-    const proxyUrl = process.env.PROXY_URL || 'http://localhost:3000';
-    
     for (const filename of filenames) {
         const url = `${baseURL}/${filename}`;
         try {
-            let response;
-            
-            if (useProxy) {
-                // Use proxy server to avoid CORS issues
-                const proxyEndpoint = `${proxyUrl}/proxy?url=${encodeURIComponent(url)}`;
-                response = await axios.get(proxyEndpoint);
-                
-                // Extract the actual JSON data from proxy response
-                if (response.data.success && response.data.data) {
-                    validateJSON(JSON.stringify(response.data.data), filename);
-                } else {
-                    throw new Error(response.data.error || 'Proxy server error');
-                }
-            } else {
-                // Direct request (may fail due to CORS)
-                response = await axios.get(url);
-                validateJSON(JSON.stringify(response.data), filename);
-            }
+            const response = await axios.get(url);
+            validateJSON(JSON.stringify(response.data), filename);
         } catch (err) {
             console.error(`\n❌ Network Error for ${filename}:`);
             console.error(`   URL: ${url}`);
@@ -411,12 +391,6 @@ async function validateJSONFromBaseURL(baseURL, filenames) {
                 console.error(`   Error Message: ${err.message}`);
                 console.error(`   💡 Suggestion: Check the URL format and network connectivity.`);
             }
-            
-            // Suggest using proxy if CORS error
-            if (err.message.includes('CORS') || err.message.includes('cors')) {
-                console.error(`   💡 CORS Issue: Consider using the proxy server by setting USE_PROXY=true`);
-            }
-            
             console.error(''); // Add spacing for readability
         }
     }
