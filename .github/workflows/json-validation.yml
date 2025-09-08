@@ -8,6 +8,11 @@ on:
       - 'validator.js'
       - '.github/workflows/json-validation.yml'
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   validate-json:
     runs-on: ubuntu-latest
