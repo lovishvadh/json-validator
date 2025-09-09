@@ -8,6 +8,12 @@ on:
       - 'validator.js'
       - '.github/workflows/json-validation.yml'
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: write
+
 jobs:
   validate-json:
     runs-on: ubuntu-latest
@@ -15,6 +21,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for proper diff comparison
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -25,12 +33,80 @@ jobs:
     - name: Install dependencies
       run: npm install
       
+    - name: Check permissions
+      run: |
+        echo "Checking GitHub Actions permissions..."
+        echo "Repository: ${{ github.repository }}"
+        echo "Actor: ${{ github.actor }}"
+        echo "Event: ${{ github.event_name }}"
+        echo "Ref: ${{ github.ref }}"
+        
+    - name: Fetch base branch
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "Fetching base branch: ${{ github.base_ref }}"
+        git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+      
+    - name: Find JSON files in commit
+      id: find-json
+      run: |
+        # Debug: Show current branch and commit info
+        echo "Current branch: $(git branch --show-current)"
+        echo "Current commit: $(git rev-parse HEAD)"
+        echo "Event: ${{ github.event_name }}"
+        
+        # Find all JSON files that were changed in this PR
+        echo "JSON files found in this PR:"
+        
+        # For pull requests, use the proper base comparison
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          echo "Pull request detected, comparing with base ref: ${{ github.base_ref }}"
+          # Compare with the base branch of the PR - this gets ALL files changed in the entire PR
+          CHANGED_JSON_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.json$' || echo "")
+          echo "Files changed in entire PR compared to base branch:"
+          git diff --name-only origin/${{ github.base_ref }}...HEAD || echo "No diff found"
+        else
+          # For push events, compare with previous commit
+          echo "Push event detected, comparing with previous commit"
+          CHANGED_JSON_FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.json$' || echo "")
+        fi
+        
+        if [ -z "$CHANGED_JSON_FILES" ]; then
+          echo "No JSON files found in this commit."
+          echo "Skipping validation as no JSON files were modified."
+          echo "json_files=" >> $GITHUB_OUTPUT
+        else
+          echo "Found JSON files:"
+          echo "$CHANGED_JSON_FILES"
+          # Create a list of JSON files for validation
+          JSON_FILES=$(echo "$CHANGED_JSON_FILES" | tr '\n' ' ')
+          echo "json_files=$JSON_FILES" >> $GITHUB_OUTPUT
+        fi
+        
     - name: Run JSON validation
       id: validation
       run: |
-        # Run the validator and capture output
-        node validator.js > validation-output.txt 2>&1
-        echo "validation_exit_code=$?" >> $GITHUB_OUTPUT
+        # Get the list of JSON files from the previous step
+        JSON_FILES="${{ steps.find-json.outputs.json_files }}"
+        
+        if [ -z "$JSON_FILES" ]; then
+            echo "No JSON files found in this commit."
+            echo "Skipping validation - no JSON files were modified in this PR."
+            echo "validation_exit_code=0" >> $GITHUB_OUTPUT
+            echo "validation_status=skipped" >> $GITHUB_OUTPUT
+        else
+            # Run validation on each JSON file
+            echo "Validating JSON files: $JSON_FILES"
+            node validator.js $JSON_FILES > validation-output.txt 2>&1
+            VALIDATION_EXIT_CODE=$?
+            echo "validation_exit_code=$VALIDATION_EXIT_CODE" >> $GITHUB_OUTPUT
+            
+            if [ $VALIDATION_EXIT_CODE -eq 0 ]; then
+                echo "validation_status=success" >> $GITHUB_OUTPUT
+            else
+                echo "validation_status=failed" >> $GITHUB_OUTPUT
+            fi
+        fi
         
     - name: Process validation results
       id: process-results
@@ -56,104 +132,218 @@ jobs:
           echo "validation_output=No validation output found" >> $GITHUB_OUTPUT
         fi
         
+    - name: Create GitHub Check
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const validationStatus = '${{ steps.validation.outputs.validation_status }}';
+          const validationExitCode = '${{ steps.validation.outputs.validation_exit_code }}';
+          const jsonFiles = '${{ steps.find-json.outputs.json_files }}';
+          
+          let conclusion = 'success';
+          let title = 'JSON Validation';
+          let summary = '';
+          
+          if (validationStatus === 'skipped') {
+            conclusion = 'neutral';
+            title = 'JSON Validation - Skipped';
+            summary = 'No JSON files were modified in this pull request, so no validation was performed.';
+          } else if (validationStatus === 'failed') {
+            conclusion = 'failure';
+            title = 'JSON Validation - Failed';
+            summary = `JSON validation failed for the following files: ${jsonFiles}`;
+          } else if (validationStatus === 'success') {
+            conclusion = 'success';
+            title = 'JSON Validation - Passed';
+            summary = `All JSON files are valid: ${jsonFiles}`;
+          }
+          
+          try {
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'JSON Validation',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: title,
+                summary: summary,
+                text: process.env.VALIDATION_OUTPUT || 'No validation output available'
+              }
+            });
+          } catch (error) {
+            console.error('Failed to create GitHub check:', error.message);
+            console.log('Check creation failed, but validation completed.');
+          }
+      env:
+        VALIDATION_OUTPUT: ${{ steps.process-results.outputs.validation_output }}
+        
     - name: Comment on PR with validation results
       if: steps.process-results.outputs.has_errors == 'true'
       uses: actions/github-script@v7
       with:
         script: |
-          const { data: comments } = await github.rest.issues.listComments({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-          });
-          
-          // Check if we already commented on this PR
-          const existingComment = comments.find(comment => 
-            comment.user.type === 'Bot' && 
-            comment.body.includes('## JSON Validation Results')
-          );
-          
-          const commentBody = `## JSON Validation Results ❌
-          
-          The JSON validation found issues in your pull request. Please review and fix the following errors:
-          
-          \`\`\`
-          ${process.env.VALIDATION_OUTPUT}
-          \`\`\`
-          
-          ### How to fix:
-          1. Review each error message carefully
-          2. Check the line numbers and suggestions provided
-          3. Fix the JSON syntax issues
-          4. Push your changes to trigger re-validation
-          
-          ---
-          *This comment was automatically generated by the JSON validation workflow.*`;
-          
-          if (existingComment) {
-            // Update existing comment
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: existingComment.id,
-              body: commentBody
-            });
-          } else {
-            // Create new comment
-            await github.rest.issues.createComment({
+          try {
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: commentBody
             });
+          
+            // Check if we already commented on this PR
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('## JSON Validation Results')
+            );
+            
+            const commentBody = `## JSON Validation Results ❌
+            
+            The JSON validation found issues in your pull request. Please review and fix the following errors:
+            
+            \`\`\`
+            ${process.env.VALIDATION_OUTPUT}
+            \`\`\`
+            
+            ### How to fix:
+            1. Review each error message carefully
+            2. Check the line numbers and suggestions provided
+            3. Fix the JSON syntax issues
+            4. Push your changes to trigger re-validation
+            
+            ---
+            *This comment was automatically generated by the JSON validation workflow.*`;
+            
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+          } catch (error) {
+            console.error('Failed to comment on PR:', error.message);
+            console.log('This might be due to insufficient permissions for external contributors.');
+            console.log('Validation completed successfully, but could not post results to PR.');
           }
       env:
         VALIDATION_OUTPUT: ${{ steps.process-results.outputs.validation_output }}
         
     - name: Comment on PR with success message
-      if: steps.process-results.outputs.has_errors == 'false'
+      if: steps.process-results.outputs.has_errors == 'false' && steps.find-json.outputs.json_files != ''
       uses: actions/github-script@v7
       with:
         script: |
-          const { data: comments } = await github.rest.issues.listComments({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-          });
-          
-          // Check if we already commented on this PR
-          const existingComment = comments.find(comment => 
-            comment.user.type === 'Bot' && 
-            comment.body.includes('## JSON Validation Results')
-          );
-          
-          const commentBody = `## JSON Validation Results ✅
-          
-          All JSON files in this pull request are valid! No issues found.
-          
-          \`\`\`
-          ${process.env.VALIDATION_OUTPUT}
-          \`\`\`
-          
-          ---
-          *This comment was automatically generated by the JSON validation workflow.*`;
-          
-          if (existingComment) {
-            // Update existing comment
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: existingComment.id,
-              body: commentBody
-            });
-          } else {
-            // Create new comment
-            await github.rest.issues.createComment({
+          try {
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: commentBody
             });
+          
+            // Check if we already commented on this PR
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('## JSON Validation Results')
+            );
+            
+            const commentBody = `## JSON Validation Results ✅
+            
+            All JSON files in this pull request are valid! No issues found.
+            
+            \`\`\`
+            ${process.env.VALIDATION_OUTPUT}
+            \`\`\`
+            
+            ---
+            *This comment was automatically generated by the JSON validation workflow.*`;
+            
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+          } catch (error) {
+            console.error('Failed to comment on PR:', error.message);
+            console.log('This might be due to insufficient permissions for external contributors.');
+            console.log('Validation completed successfully, but could not post results to PR.');
           }
       env:
         VALIDATION_OUTPUT: ${{ steps.process-results.outputs.validation_output }}
+        
+    - name: Comment on PR with no JSON files message
+      if: steps.find-json.outputs.json_files == ''
+      uses: actions/github-script@v7
+      with:
+        script: |
+          try {
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            // Check if we already commented on this PR
+            const existingComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('## JSON Validation Results')
+            );
+            
+            const commentBody = `## JSON Validation Results ℹ️
+            
+            No JSON files were modified in this pull request, so no validation was performed.
+            
+            ---
+            *This comment was automatically generated by the JSON validation workflow.*`;
+            
+            if (existingComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: commentBody
+              });
+            }
+          } catch (error) {
+            console.error('Failed to comment on PR:', error.message);
+            console.log('This might be due to insufficient permissions for external contributors.');
+            console.log('No JSON files were found, but could not post results to PR.');
+          }
+          
+    - name: Fail workflow if validation failed
+      if: steps.validation.outputs.validation_status == 'failed'
+      run: |
+        echo "❌ JSON validation failed. Please fix the issues and try again."
+        exit 1
