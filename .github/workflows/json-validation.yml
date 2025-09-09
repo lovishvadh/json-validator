@@ -21,6 +21,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for proper diff comparison
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
@@ -38,6 +40,12 @@ jobs:
         echo "Actor: ${{ github.actor }}"
         echo "Event: ${{ github.event_name }}"
         echo "Ref: ${{ github.ref }}"
+        
+    - name: Fetch base branch
+      if: github.event_name == 'pull_request'
+      run: |
+        echo "Fetching base branch: ${{ github.base_ref }}"
+        git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
       
     - name: Find JSON files in commit
       id: find-json
@@ -53,8 +61,10 @@ jobs:
         # For pull requests, use the proper base comparison
         if [ "${{ github.event_name }}" = "pull_request" ]; then
           echo "Pull request detected, comparing with base ref: ${{ github.base_ref }}"
-          # Compare with the base branch of the PR
+          # Compare with the base branch of the PR - this gets ALL files changed in the entire PR
           CHANGED_JSON_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.json$' || echo "")
+          echo "Files changed in entire PR compared to base branch:"
+          git diff --name-only origin/${{ github.base_ref }}...HEAD || echo "No diff found"
         else
           # For push events, compare with previous commit
           echo "Push event detected, comparing with previous commit"
