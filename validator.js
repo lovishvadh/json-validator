@@ -25,12 +25,13 @@ function validateJSON(content, filename) {
         
         console.error(`   💡 Suggestion: Remove all duplicate keys except the first one. Each key in a JSON object must be unique at the same level.`);
         console.error(''); // Add spacing for readability
-        return;
+        return true; // Return true to indicate error found
     }
     
     try {
         JSON.parse(content);
         console.log(`✅ ${filename} is a valid JSON.`);
+        return false; // Return false to indicate no error
     } catch (error) {
         console.error(`\n❌ JSON Validation Error in ${filename}:`);
         console.error(`   Error Type: ${error.name}`);
@@ -57,6 +58,7 @@ function validateJSON(content, filename) {
             }
         }
         console.error(''); // Add spacing for readability
+        return true; // Return true to indicate error found
     }
 }
 
@@ -298,14 +300,19 @@ function getParentContext(lines, currentLineIndex, bracketStack) {
 function validateLocalJSON(repoPath, filenames) {
     if (!filenames || filenames.length === 0) {
         console.log("❌ No files provided for validation.");
-        return;
+        return false;
     }
+    
+    let hasErrors = false;
     
     filenames.forEach(file => {
         const filePath = path.join(repoPath, file);
         try {
             const content = fs.readFileSync(filePath, 'utf-8');
-            validateJSON(content, file);
+            const fileHasErrors = validateJSON(content, file);
+            if (fileHasErrors) {
+                hasErrors = true;
+            }
         } catch (err) {
             console.error(`\n❌ File Reading Error for ${file}:`);
             console.error(`   Error Type: ${err.name}`);
@@ -318,12 +325,15 @@ function validateLocalJSON(repoPath, filenames) {
                 console.error(`   💡 Suggestion: Permission denied. Check file permissions.`);
             } else if (err.code === 'EISDIR') {
                 console.error(`   💡 Suggestion: The path is a directory, not a file.`);
-    } else {
+            } else {
                 console.error(`   💡 Suggestion: Check if the file exists and is readable.`);
             }
             console.error(''); // Add spacing for readability
+            hasErrors = true;
         }
     });
+    
+    return hasErrors;
 }
 
 
@@ -341,7 +351,15 @@ async function main() {
     
     // Validate the specified JSON files
     console.log("\n🔍 Validating JSON files from commit...");
-    await validateLocalJSON('.', args);
+    const hasErrors = await validateLocalJSON('.', args);
+    
+    if (hasErrors) {
+        console.log("\n❌ Validation completed with errors. Please fix the issues above.");
+        process.exit(1);
+    } else {
+        console.log("\n✅ All JSON files are valid!");
+        process.exit(0);
+    }
 }
 
  
