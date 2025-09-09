@@ -1,0 +1,23 @@
+name: 'JSON Validator'
+description: 'Validates JSON files in pull requests with detailed error reporting'
+author: 'JSON Validator Team'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  # Optional: Custom validation rules
+  strict-mode:
+    description: 'Enable strict validation mode'
+    required: false
+    default: 'false'
+  
+  # Optional: Custom error message format
+  error-format:
+    description: 'Error message format (detailed|simple)'
+    required: false
+    default: 'detailed'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'
