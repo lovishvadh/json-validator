@@ -93,11 +93,19 @@ jobs:
             echo "No JSON files found in this commit."
             echo "Skipping validation - no JSON files were modified in this PR."
             echo "validation_exit_code=0" >> $GITHUB_OUTPUT
+            echo "validation_status=skipped" >> $GITHUB_OUTPUT
         else
             # Run validation on each JSON file
             echo "Validating JSON files: $JSON_FILES"
             node validator.js $JSON_FILES > validation-output.txt 2>&1
-            echo "validation_exit_code=$?" >> $GITHUB_OUTPUT
+            VALIDATION_EXIT_CODE=$?
+            echo "validation_exit_code=$VALIDATION_EXIT_CODE" >> $GITHUB_OUTPUT
+            
+            if [ $VALIDATION_EXIT_CODE -eq 0 ]; then
+                echo "validation_status=success" >> $GITHUB_OUTPUT
+            else
+                echo "validation_status=failed" >> $GITHUB_OUTPUT
+            fi
         fi
         
     - name: Process validation results
@@ -123,6 +131,54 @@ jobs:
           echo "has_errors=false" >> $GITHUB_OUTPUT
           echo "validation_output=No validation output found" >> $GITHUB_OUTPUT
         fi
+        
+    - name: Create GitHub Check
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const validationStatus = '${{ steps.validation.outputs.validation_status }}';
+          const validationExitCode = '${{ steps.validation.outputs.validation_exit_code }}';
+          const jsonFiles = '${{ steps.find-json.outputs.json_files }}';
+          
+          let conclusion = 'success';
+          let title = 'JSON Validation';
+          let summary = '';
+          
+          if (validationStatus === 'skipped') {
+            conclusion = 'neutral';
+            title = 'JSON Validation - Skipped';
+            summary = 'No JSON files were modified in this pull request, so no validation was performed.';
+          } else if (validationStatus === 'failed') {
+            conclusion = 'failure';
+            title = 'JSON Validation - Failed';
+            summary = `JSON validation failed for the following files: ${jsonFiles}`;
+          } else if (validationStatus === 'success') {
+            conclusion = 'success';
+            title = 'JSON Validation - Passed';
+            summary = `All JSON files are valid: ${jsonFiles}`;
+          }
+          
+          try {
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'JSON Validation',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: title,
+                summary: summary,
+                text: process.env.VALIDATION_OUTPUT || 'No validation output available'
+              }
+            });
+          } catch (error) {
+            console.error('Failed to create GitHub check:', error.message);
+            console.log('Check creation failed, but validation completed.');
+          }
+      env:
+        VALIDATION_OUTPUT: ${{ steps.process-results.outputs.validation_output }}
         
     - name: Comment on PR with validation results
       if: steps.process-results.outputs.has_errors == 'true'
@@ -285,3 +341,9 @@ jobs:
             console.log('This might be due to insufficient permissions for external contributors.');
             console.log('No JSON files were found, but could not post results to PR.');
           }
+          
+    - name: Fail workflow if validation failed
+      if: steps.validation.outputs.validation_status == 'failed'
+      run: |
+        echo "❌ JSON validation failed. Please fix the issues and try again."
+        exit 1
