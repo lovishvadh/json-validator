@@ -61,12 +61,6 @@ jobs:
           CHANGED_JSON_FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.json$' || echo "")
         fi
         
-        # If no files found with diff, try to find all JSON files in the current commit
-        if [ -z "$CHANGED_JSON_FILES" ]; then
-          echo "No changed files found with diff, checking all JSON files in current commit..."
-          CHANGED_JSON_FILES=$(git ls-tree -r --name-only HEAD | grep '\.json$' || echo "")
-        fi
-        
         if [ -z "$CHANGED_JSON_FILES" ]; then
           echo "No JSON files found in this commit."
           echo "Skipping validation as no JSON files were modified."
