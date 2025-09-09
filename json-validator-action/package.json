@@ -4,8 +4,9 @@
   "description": "GitHub Action for validating JSON files in pull requests",
   "main": "dist/index.js",
   "scripts": {
-    "build": "ncc build src/index.js -o dist",
-    "test": "jest",
+    "build": "ncc build src/index.js -o dist && cp validator.js dist/",
+    "test": "node test-validator.js",
+    "test:unit": "jest",
     "lint": "eslint src/**/*.js",
     "package": "npm run build && npm run test"
   },
