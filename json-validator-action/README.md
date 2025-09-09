@@ -199,6 +199,41 @@ json-validator-action/
 
 MIT License - see [LICENSE](LICENSE) file for details.
 
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+#### "Action failed: Validation execution failed"
+- **Cause**: The validator script couldn't be executed
+- **Solution**: Ensure the `validator.js` file is included in your action build
+
+#### "No JSON files found in this PR"
+- **Cause**: No `.json` files were modified in the pull request
+- **Solution**: This is expected behavior - the action will skip validation
+
+#### "File not found" errors
+- **Cause**: JSON files referenced in the PR don't exist
+- **Solution**: Check that the file paths are correct and files exist
+
+### Debug Mode
+
+Add debug logging to see what's happening:
+
+```yaml
+- name: JSON Validation
+  uses: your-username/json-validator-action@v1
+  env:
+    ACTIONS_STEP_DEBUG: true
+```
+
+### Alternative: Use Standalone Workflow
+
+If the action doesn't work, use the standalone workflow file:
+
+1. Copy `standalone-workflow.yml` to your `.github/workflows/` directory
+2. Rename it to `json-validation.yml`
+3. Update the validator URL in the workflow to point to your repository
+
 ## 🆘 Support
 
 - **Issues**: [GitHub Issues](https://github.com/your-username/json-validator-action/issues)

@@ -1,0 +1,177 @@
+name: JSON Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/*.json'
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Fetching base branch: ${{ github.base_ref }}"
+          git fetch origin ${{ github.base_ref }}:${{ github.base_ref }}
+
+      - name: Find JSON files in commit
+        id: find-json
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED_JSON_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep '\.json$' || echo "")
+          else
+            CHANGED_JSON_FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.json$' || echo "")
+          fi
+          
+          if [ -z "$CHANGED_JSON_FILES" ]; then
+            echo "No JSON files found in this commit."
+            echo "Skipping validation as no JSON files were modified."
+            echo "json_files=" >> $GITHUB_OUTPUT
+          else
+            echo "Found JSON files:"
+            echo "$CHANGED_JSON_FILES"
+            JSON_FILES=$(echo "$CHANGED_JSON_FILES" | tr '\n' ' ')
+            echo "json_files=$JSON_FILES" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download JSON Validator
+        if: steps.find-json.outputs.json_files != ''
+        run: |
+          curl -o validator.js https://raw.githubusercontent.com/your-username/json-validator-action/main/validator.js
+
+      - name: Run JSON validation
+        id: validation
+        if: steps.find-json.outputs.json_files != ''
+        run: |
+          JSON_FILES="${{ steps.find-json.outputs.json_files }}"
+          echo "Validating JSON files: $JSON_FILES"
+          node validator.js $JSON_FILES > validation-output.txt 2>&1
+          VALIDATION_EXIT_CODE=$?
+          echo "validation_exit_code=$VALIDATION_EXIT_CODE" >> $GITHUB_OUTPUT
+          
+          if [ $VALIDATION_EXIT_CODE -eq 0 ]; then
+            echo "validation_status=success" >> $GITHUB_OUTPUT
+          else
+            echo "validation_status=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Process validation results
+        id: process-results
+        if: always() && steps.find-json.outputs.json_files != ''
+        run: |
+          if [ -f validation-output.txt ]; then
+            VALIDATION_OUTPUT=$(cat validation-output.txt)
+            echo "validation_output<<EOF" >> $GITHUB_OUTPUT
+            echo "$VALIDATION_OUTPUT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "validation_output=No validation output available" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Check
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const validationStatus = '${{ steps.validation.outputs.validation_status }}';
+            const jsonFiles = '${{ steps.find-json.outputs.json_files }}';
+            
+            let conclusion = 'success';
+            let title = 'JSON Validation - Passed';
+            let summary = 'All JSON files are valid!';
+            
+            if (jsonFiles === '') {
+              conclusion = 'neutral';
+              title = 'JSON Validation - Skipped';
+              summary = 'No JSON files were modified in this pull request.';
+            } else if (validationStatus === 'failed') {
+              conclusion = 'failure';
+              title = 'JSON Validation - Failed';
+              summary = 'JSON validation found issues that need to be addressed.';
+            }
+            
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'JSON Validation',
+              head_sha: context.sha,
+              status: 'completed',
+              conclusion: conclusion,
+              output: {
+                title: title,
+                summary: summary,
+                text: `${{ steps.process-results.outputs.validation_output }}`
+              }
+            });
+        env:
+          VALIDATION_OUTPUT: ${{ steps.process-results.outputs.validation_output }}
+
+      - name: Comment on PR - Success
+        if: steps.validation.outputs.validation_status == 'success' && steps.find-json.outputs.json_files != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## JSON Validation Results ✅
+                
+                All JSON files in this pull request are valid! No issues found.
+                
+                \`\`\`
+                ${{ steps.process-results.outputs.validation_output }}
+                \`\`\`
+                
+                ---
+                *This comment was automatically generated by the JSON validation workflow.*`
+              });
+            } catch (error) {
+              console.log('Could not create comment:', error.message);
+            }
+
+      - name: Comment on PR - Errors
+        if: steps.validation.outputs.validation_status == 'failed' && steps.find-json.outputs.json_files != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `## JSON Validation Results ❌
+                
+                JSON validation found issues that need to be addressed:
+                
+                \`\`\`
+                ${{ steps.process-results.outputs.validation_output }}
+                \`\`\`
+                
+                Please fix the issues above and push your changes.
+                
+                ---
+                *This comment was automatically generated by the JSON validation workflow.*`
+              });
+            } catch (error) {
+              console.log('Could not create comment:', error.message);
+            }
+
+      - name: Fail workflow if validation failed
+        if: steps.validation.outputs.validation_status == 'failed'
+        run: |
+          echo "❌ JSON validation failed. Please fix the issues and try again."
+          exit 1
