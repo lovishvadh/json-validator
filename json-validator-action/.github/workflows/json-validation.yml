@@ -1,0 +1,27 @@
+name: JSON Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**/*.json'
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  validate-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: JSON Validation
+        uses: ./  # Use the current action
+        with:
+          strict-mode: 'false'
+          error-format: 'detailed'
