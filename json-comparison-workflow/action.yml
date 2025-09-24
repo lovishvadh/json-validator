@@ -1,0 +1,44 @@
+name: 'JSON Comparison Workflow'
+description: 'Compares JSON files between branches and sends Slack notifications on differences'
+author: 'JSON Comparison Team'
+branding:
+  icon: 'git-compare'
+  color: 'green'
+
+inputs:
+  # Required: Target branch to compare against
+  target-branch:
+    description: 'Branch to compare against (e.g., main, develop)'
+    required: true
+    default: 'main'
+  
+  # Required: JSON file path to compare
+  json-file-path:
+    description: 'Path to the JSON file to compare (e.g., config.json, data/settings.json)'
+    required: true
+  
+  # Required: Slack webhook URL
+  slack-webhook-url:
+    description: 'Slack webhook URL for notifications'
+    required: true
+  
+  # Optional: Slack channel override
+  slack-channel:
+    description: 'Slack channel to send notifications to (overrides webhook default)'
+    required: false
+  
+  # Optional: Comparison mode
+  comparison-mode:
+    description: 'Comparison mode (strict|lenient)'
+    required: false
+    default: 'strict'
+  
+  # Optional: Ignore specific keys during comparison
+  ignore-keys:
+    description: 'Comma-separated list of keys to ignore during comparison'
+    required: false
+    default: ''
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

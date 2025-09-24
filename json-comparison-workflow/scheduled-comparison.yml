@@ -1,0 +1,74 @@
+name: JSON Comparison Scheduler
+
+on:
+  # Run on a schedule (every day at 9 AM UTC)
+  schedule:
+    - cron: '0 9 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target branch to compare against'
+        required: true
+        default: 'main'
+        type: string
+      json_file_path:
+        description: 'Path to JSON file to compare'
+        required: true
+        default: 'config.json'
+        type: string
+      comparison_mode:
+        description: 'Comparison mode (strict|lenient)'
+        required: false
+        default: 'strict'
+        type: choice
+        options:
+          - strict
+          - lenient
+      ignore_keys:
+        description: 'Comma-separated keys to ignore during comparison'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  compare-json:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Install dependencies
+        run: |
+          npm install @actions/core @actions/github @actions/exec @slack/web-api deep-diff
+          npm install -g @vercel/ncc
+      
+      - name: Build action
+        run: |
+          ncc build src/index.js -o dist
+      
+      - name: JSON Comparison
+        uses: ./
+        with:
+          target-branch: ${{ github.event.inputs.target_branch || 'main' }}
+          json-file-path: ${{ github.event.inputs.json_file_path || 'config.json' }}
+          slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          slack-channel: ${{ secrets.SLACK_CHANNEL }}
+          comparison-mode: ${{ github.event.inputs.comparison_mode || 'strict' }}
+          ignore-keys: ${{ github.event.inputs.ignore_keys || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
