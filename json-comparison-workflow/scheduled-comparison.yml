@@ -8,15 +8,15 @@ on:
   # Allow manual triggering
   workflow_dispatch:
     inputs:
-      target_branch:
-        description: 'Target branch to compare against'
+      folder_path:
+        description: 'Folder path to scan for JSON files'
         required: true
-        default: 'main'
+        default: 'config'
         type: string
-      json_file_path:
-        description: 'Path to JSON file to compare'
+      base_url:
+        description: 'Base URL for remote JSON files'
         required: true
-        default: 'config.json'
+        default: 'https://api.example.com/config'
         type: string
       comparison_mode:
         description: 'Comparison mode (strict|lenient)'
@@ -31,6 +31,16 @@ on:
         required: false
         default: ''
         type: string
+      file_extensions:
+        description: 'Comma-separated file extensions to include'
+        required: false
+        default: 'json'
+        type: string
+      recursive:
+        description: 'Scan subfolders recursively'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: read
@@ -64,11 +74,13 @@ jobs:
       - name: JSON Comparison
         uses: ./
         with:
-          target-branch: ${{ github.event.inputs.target_branch || 'main' }}
-          json-file-path: ${{ github.event.inputs.json_file_path || 'config.json' }}
+          folder-path: ${{ github.event.inputs.folder_path || 'config' }}
+          base-url: ${{ github.event.inputs.base_url || 'https://api.example.com/config' }}
           slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           slack-channel: ${{ secrets.SLACK_CHANNEL }}
           comparison-mode: ${{ github.event.inputs.comparison_mode || 'strict' }}
           ignore-keys: ${{ github.event.inputs.ignore_keys || '' }}
+          file-extensions: ${{ github.event.inputs.file_extensions || 'json' }}
+          recursive: ${{ github.event.inputs.recursive || 'false' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

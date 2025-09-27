@@ -1,16 +1,19 @@
 # JSON Comparison Workflow
 
-A powerful GitHub Action that automatically compares JSON files between branches on a schedule and sends Slack notifications when differences are detected.
+A powerful GitHub Action that automatically compares JSON files from a local folder with remote URLs on a schedule and sends Slack notifications when differences are detected.
 
 ## 🚀 Features
 
 - ⏰ **Scheduled Execution**: Runs automatically on a cron schedule (configurable)
-- 🔄 **Branch Comparison**: Compares JSON files between any two branches
+- 📁 **Folder-based Comparison**: Scans a folder and compares all JSON files with remote URLs
+- 🌐 **Remote URL Integration**: Fetches JSON files from any HTTP/HTTPS URL
 - 📱 **Slack Integration**: Sends rich notifications to Slack channels
 - 🎯 **Flexible Configuration**: Supports different comparison modes and key filtering
 - 🤖 **Manual Triggering**: Can be triggered manually with custom parameters
 - 📊 **Detailed Reporting**: Shows exact differences between JSON files
+- 📄 **HTML Report Generation**: Creates clean HTML reports for sharing differences
 - 🛡️ **Error Handling**: Graceful handling of missing files and parsing errors
+- 🔍 **Recursive Scanning**: Option to scan subfolders recursively
 
 ## 📦 Installation
 
@@ -29,15 +32,15 @@ on:
   # Allow manual triggering
   workflow_dispatch:
     inputs:
-      target_branch:
-        description: 'Target branch to compare against'
+      folder_path:
+        description: 'Folder path to scan for JSON files'
         required: true
-        default: 'main'
+        default: 'config'
         type: string
-      json_file_path:
-        description: 'Path to JSON file to compare'
+      base_url:
+        description: 'Base URL for remote JSON files'
         required: true
-        default: 'config.json'
+        default: 'https://api.example.com/config'
         type: string
 
 permissions:
@@ -57,8 +60,8 @@ jobs:
       - name: JSON Comparison
         uses: your-username/json-comparison-workflow@v1
         with:
-          target-branch: ${{ github.event.inputs.target_branch || 'main' }}
-          json-file-path: ${{ github.event.inputs.json_file_path || 'config.json' }}
+          folder-path: ${{ github.event.inputs.folder_path || 'config' }}
+          base-url: ${{ github.event.inputs.base_url || 'https://api.example.com/config' }}
           slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           slack-channel: ${{ secrets.SLACK_CHANNEL }}
           comparison-mode: 'strict'
@@ -92,12 +95,14 @@ Add these secrets to your repository settings:
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `target-branch` | Branch to compare against | Yes | `main` |
-| `json-file-path` | Path to JSON file to compare | Yes | - |
+| `folder-path` | Folder path to scan for JSON files | Yes | `config` |
+| `base-url` | Base URL for remote JSON files | Yes | - |
 | `slack-webhook-url` | Slack webhook URL | Yes | - |
 | `slack-channel` | Slack channel override | No | - |
 | `comparison-mode` | Comparison mode (strict\|lenient) | No | `strict` |
 | `ignore-keys` | Comma-separated keys to ignore | No | - |
+| `file-extensions` | Comma-separated file extensions | No | `json` |
+| `recursive` | Scan subfolders recursively | No | `false` |
 
 ## 🎯 Usage Examples
 
@@ -120,15 +125,15 @@ jobs:
       
       - uses: your-username/json-comparison-workflow@v1
         with:
-          target-branch: 'main'
-          json-file-path: 'config/settings.json'
+          folder-path: 'config'
+          base-url: 'https://api.example.com/config'
           slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
 ```
 
-### Multiple File Comparison
+### Multiple Folder Comparison
 
 ```yaml
-name: Multi-File JSON Comparison
+name: Multi-Folder JSON Comparison
 
 on:
   schedule:
@@ -144,8 +149,8 @@ jobs:
       
       - uses: your-username/json-comparison-workflow@v1
         with:
-          target-branch: 'main'
-          json-file-path: 'config/app.json'
+          folder-path: 'config'
+          base-url: 'https://api.example.com/config'
           slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           slack-channel: '#config-alerts'
   
@@ -158,8 +163,8 @@ jobs:
       
       - uses: your-username/json-comparison-workflow@v1
         with:
-          target-branch: 'main'
-          json-file-path: 'data/schema.json'
+          folder-path: 'data'
+          base-url: 'https://api.example.com/data'
           slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           slack-channel: '#data-alerts'
 ```
@@ -169,25 +174,32 @@ jobs:
 ```yaml
 - uses: your-username/json-comparison-workflow@v1
   with:
-    target-branch: 'main'
-    json-file-path: 'config/settings.json'
+    folder-path: 'config'
+    base-url: 'https://api.example.com/config'
     slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
     ignore-keys: 'timestamp,lastModified,version'
     comparison-mode: 'lenient'
 ```
 
+### Recursive Folder Scanning
+
+```yaml
+- uses: your-username/json-comparison-workflow@v1
+  with:
+    folder-path: 'config'
+    base-url: 'https://api.example.com/config'
+    slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+    recursive: 'true'
+    file-extensions: 'json,jsonc'
+```
+
 ## 📊 Slack Notification Examples
 
-### ✅ Success Notification
+### ✅ Success (No Notification)
 
+When all files are identical, no Slack notification is sent. The workflow will log:
 ```
-🤖 JSON Comparison Bot
-✅ JSON Comparison Success
-
-File: config.json
-Current Branch: feature-branch
-Target Branch: main
-Message: Files are identical between feature-branch and main
+✅ All JSON files are identical - no Slack notification sent
 ```
 
 ### ⚠️ Difference Alert
@@ -196,15 +208,23 @@ Message: Files are identical between feature-branch and main
 🤖 JSON Comparison Bot
 🔄 JSON Comparison Alert
 
-File: config.json
+Folder: config
 Current Branch: feature-branch
-Target Branch: main
-Message: Files differ between feature-branch and main
+Base URL: https://api.example.com/config
+Message: Found differences in 2 file(s)
 
-Differences:
-• Changed: database.host from "localhost" to "prod-db.example.com"
-• Added: features.newFeature = true
-• Removed: debug.enabled = true
+Summary:
+✅ Identical: 1
+🔄 Different: 2
+❌ Errors: 0
+
+Files with Differences:
+• config/app.json (3 differences)
+• config/database.json (1 differences)
+
+📊 Detailed Report:
+A detailed HTML report has been generated with all differences.
+Report saved to: reports/json-comparison-report-1703123456789.html
 ```
 
 ### ❌ Error Notification
@@ -213,11 +233,47 @@ Differences:
 🤖 JSON Comparison Bot
 ❌ JSON Comparison Error
 
-File: config.json
+Folder: config
 Current Branch: feature-branch
-Target Branch: main
-Message: Workflow failed: File config.json does not exist in target branch (main)
+Base URL: https://api.example.com/config
+Message: Workflow failed: Failed to fetch remote file: https://api.example.com/config/app.json
 ```
+
+## 📄 HTML Report Generation
+
+When differences are found, the workflow automatically generates a clean HTML report that can be shared with team members.
+
+### Report Features
+
+- **📊 Summary Statistics**: Shows counts of identical, different, and error files
+- **📁 File-by-File Analysis**: Detailed breakdown for each file
+- **🔍 Difference Details**: Clear listing of all differences found
+- **📱 Responsive Design**: Works on desktop and mobile devices
+- **🎨 Clean Styling**: Professional appearance for sharing
+
+### Report Location
+
+Reports are saved to the `reports/` directory with timestamped filenames:
+```
+reports/json-comparison-report-1703123456789.html
+```
+
+### Report Contents
+
+Each report includes:
+- **Header**: Report title and generation timestamp
+- **Summary Cards**: Visual statistics overview
+- **File Sections**: Individual analysis for each file
+- **Metadata**: Folder, branch, and URL information
+- **Differences List**: Detailed change descriptions
+
+### Sharing Reports
+
+The HTML reports are self-contained and can be:
+- **📧 Emailed** to team members
+- **💬 Shared** in Slack or other chat platforms
+- **🌐 Hosted** on web servers for team access
+- **📱 Viewed** on any device with a web browser
 
 ## 🔧 Comparison Modes
 

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Comparison Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #fafafa;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: #fff;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header .subtitle {
+            font-size: 1.1rem;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .summary-card {
+            background: #fff;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .summary-card.success {
+            border-left: 4px solid #28a745;
+        }
+
+        .summary-card.warning {
+            border-left: 4px solid #ffc107;
+        }
+
+        .summary-card.error {
+            border-left: 4px solid #6c757d;
+        }
+
+        .summary-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .summary-label {
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .success .summary-number { color: #28a745; }
+        .warning .summary-number { color: #ffc107; }
+        .error .summary-number { color: #6c757d; }
+
+        .file-section {
+            background: #fff;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .file-header {
+            background: #f6f8fa;
+            padding: 20px;
+            border-bottom: 1px solid #e1e4e8;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .file-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #24292e;
+        }
+
+        .file-status {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .file-status.identical {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .file-status.different {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .file-status.error {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .file-content {
+            padding: 20px;
+        }
+
+        .no-differences {
+            text-align: center;
+            padding: 40px 20px;
+            color: #28a745;
+        }
+
+        .no-differences h3 {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-top: 10px;
+            border-left: 4px solid #dc3545;
+        }
+
+        .error-message strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .error-details {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff;
+            border-radius: 4px;
+            border: 1px solid #e1e4e8;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+            font-size: 0.85rem;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 JSON Comparison Report</h1>
+            <div class="subtitle">Generated on December 21, 2024 at 2:30:45 PM</div>
+        </div>
+
+        <div class="summary">
+            <div class="summary-card success">
+                <div class="summary-number">2</div>
+                <div class="summary-label">Identical Files</div>
+            </div>
+            <div class="summary-card warning">
+                <div class="summary-number">1</div>
+                <div class="summary-label">Files with Differences</div>
+            </div>
+            <div class="summary-card error">
+                <div class="summary-number">2</div>
+                <div class="summary-label">Files with Errors</div>
+            </div>
+        </div>
+
+        <!-- Identical Files -->
+        <div class="file-section">
+            <div class="file-header">
+                <div class="file-title">app.json</div>
+                <div class="file-status identical">IDENTICAL</div>
+            </div>
+            <div class="file-content">
+                <div class="no-differences">
+                    <h3>✅ Files are identical</h3>
+                    <p>No differences found between local and remote files.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="file-section">
+            <div class="file-header">
+                <div class="file-title">security.json</div>
+                <div class="file-status identical">IDENTICAL</div>
+            </div>
+            <div class="file-content">
+                <div class="no-differences">
+                    <h3>✅ Files are identical</h3>
+                    <p>No differences found between local and remote files.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Different File -->
+        <div class="file-section">
+            <div class="file-header">
+                <div class="file-title">database.json</div>
+                <div class="file-status different">DIFFERENT</div>
+            </div>
+            <div class="file-content">
+                <div class="metadata">
+                    <div class="metadata-item">
+                        <span class="metadata-label">📄 Local File</span>
+                        <span>config/database.json</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">🌐 Remote URL</span>
+                        <span>https://api.example.com/config/database.json</span>
+                    </div>
+                    <div class="metadata-item">
+                        <span class="metadata-label">🌿 Branch</span>
+                        <span>feature-branch</span>
+                    </div>
+                </div>
+                
+                <div class="differences-list">
+                    <h4>🔍 Differences Found (1)</h4>
+                    <div class="difference-item modified">
+                        <div class="difference-path">version</div>
+                        <div class="difference-description">Changed: version from "1.0.0" to "1.1.0"</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error Files -->
+        <div class="file-section">
+            <div class="file-header">
+                <div class="file-title">monitoring.json</div>
+                <div class="file-status error">ERROR</div>
+            </div>
+            <div class="file-content">
+                <div class="error-message">
+                    <strong>❌ Error:</strong> Failed to fetch remote file: 404 Not Found
+                    <div class="error-details">
+                        <strong>Details:</strong> The remote file could not be found at the expected URL.
+                        <br><strong>URL:</strong> https://api.example.com/config/monitoring.json
+                        <br><strong>Status Code:</strong> 404
+                        <br><strong>Possible causes:</strong>
+                        <ul style="margin: 5px 0 0 20px;">
+                            <li>File has been moved or renamed</li>
+                            <li>File has been deleted from the remote server</li>
+                            <li>Incorrect URL configuration</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="file-section">
+            <div class="file-header">
+                <div class="file-title">analytics.json</div>
+                <div class="file-status error">ERROR</div>
+            </div>
+            <div class="file-content">
+                <div class="error-message">
+                    <strong>❌ Error:</strong> Failed to fetch remote file: Connection timeout
+                    <div class="error-details">
+                        <strong>Details:</strong> The request to fetch the remote file timed out.
+                        <br><strong>URL:</strong> https://api.example.com/config/analytics.json
+                        <br><strong>Timeout:</strong> 30 seconds
+                        <br><strong>Possible causes:</strong>
+                        <ul style="margin: 5px 0 0 20px;">
+                            <li>Network connectivity issues</li>
+                            <li>Remote server is slow or overloaded</li>
+                            <li>Firewall blocking the request</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>📊 <strong>JSON Comparison Workflow</strong> - Generated automatically by GitHub Actions</p>
+            <p>This report shows differences between local JSON files and their remote counterparts.</p>
+            <p>⚠️ <strong>Note:</strong> Some files could not be compared due to errors. Please check the error details above.</p>
+        </div>
+    </div>
+</body>
+</html>

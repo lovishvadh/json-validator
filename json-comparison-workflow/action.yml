@@ -1,20 +1,20 @@
 name: 'JSON Comparison Workflow'
-description: 'Compares JSON files between branches and sends Slack notifications on differences'
+description: 'Compares JSON files from a folder with remote URLs and sends Slack notifications on differences'
 author: 'JSON Comparison Team'
 branding:
   icon: 'git-compare'
   color: 'green'
 
 inputs:
-  # Required: Target branch to compare against
-  target-branch:
-    description: 'Branch to compare against (e.g., main, develop)'
+  # Required: Folder path to scan for JSON files
+  folder-path:
+    description: 'Path to the folder containing JSON files to compare (e.g., config/, data/)'
     required: true
-    default: 'main'
+    default: 'config'
   
-  # Required: JSON file path to compare
-  json-file-path:
-    description: 'Path to the JSON file to compare (e.g., config.json, data/settings.json)'
+  # Required: Base URL for remote JSON files
+  base-url:
+    description: 'Base URL for remote JSON files (e.g., https://api.example.com/config)'
     required: true
   
   # Required: Slack webhook URL
@@ -38,6 +38,18 @@ inputs:
     description: 'Comma-separated list of keys to ignore during comparison'
     required: false
     default: ''
+  
+  # Optional: File extensions to include
+  file-extensions:
+    description: 'Comma-separated file extensions to include (e.g., json,jsonc)'
+    required: false
+    default: 'json'
+  
+  # Optional: Recursive folder scanning
+  recursive:
+    description: 'Scan subfolders recursively'
+    required: false
+    default: 'false'
 
 runs:
   using: 'node20'

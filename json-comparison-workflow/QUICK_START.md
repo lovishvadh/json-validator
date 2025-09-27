@@ -72,7 +72,7 @@ jobs:
 
 1. **Manual Test**: Go to Actions → JSON Comparison → Run workflow
 2. **Schedule Test**: Wait for the scheduled time or modify the cron to run sooner
-3. **Check Slack**: Look for notifications in your configured channel
+3. **Check Slack**: Look for notifications in your configured channel (only sent for differences/errors)
 
 ## 🎯 Common Use Cases
 
@@ -163,6 +163,7 @@ jobs:
 - ✅ Check webhook URL is correct
 - ✅ Verify channel permissions
 - ✅ Check GitHub Actions logs
+- ✅ **Note**: Notifications are only sent for differences/errors, not for successful comparisons
 
 ### Workflow not running?
 - ✅ Check cron schedule syntax

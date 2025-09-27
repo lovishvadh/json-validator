@@ -3,95 +3,158 @@ const github = require('@actions/github');
 const { exec } = require('@actions/exec');
 const { WebClient } = require('@slack/web-api');
 const diff = require('deep-diff');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const { generateAndSaveReport } = require('./report-generator');
 
 async function run() {
   try {
     // Get inputs
-    const targetBranch = core.getInput('target-branch', { required: true });
-    const jsonFilePath = core.getInput('json-file-path', { required: true });
+    const folderPath = core.getInput('folder-path', { required: true });
+    const baseUrl = core.getInput('base-url', { required: true });
     const slackWebhookUrl = core.getInput('slack-webhook-url', { required: true });
     const slackChannel = core.getInput('slack-channel');
     const comparisonMode = core.getInput('comparison-mode') || 'strict';
     const ignoreKeys = core.getInput('ignore-keys') || '';
+    const fileExtensions = core.getInput('file-extensions') || 'json';
+    const recursive = core.getInput('recursive') === 'true';
     
     // Get GitHub context
     const context = github.context;
     const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
     
     core.info('🔍 Starting JSON comparison workflow...');
-    core.info(`📁 Comparing file: ${jsonFilePath}`);
-    core.info(`🌿 Target branch: ${targetBranch}`);
+    core.info(`📁 Scanning folder: ${folderPath}`);
+    core.info(`🌐 Base URL: ${baseUrl}`);
     
     // Get current branch
     const currentBranch = await getCurrentBranch();
     core.info(`🌿 Current branch: ${currentBranch}`);
     
-    // Check if file exists in both branches
-    const fileExistsInCurrent = await checkFileExists(jsonFilePath);
-    const fileExistsInTarget = await checkFileExistsInBranch(jsonFilePath, targetBranch);
+    // Find all JSON files in the folder
+    const jsonFiles = await findJsonFilesInFolder(folderPath, fileExtensions.split(','), recursive);
     
-    if (!fileExistsInCurrent) {
-      core.warning(`⚠️ File ${jsonFilePath} does not exist in current branch`);
+    if (jsonFiles.length === 0) {
+      core.warning(`⚠️ No JSON files found in folder: ${folderPath}`);
       await sendSlackNotification(slackWebhookUrl, slackChannel, {
         type: 'warning',
         title: 'JSON Comparison Warning',
-        message: `File ${jsonFilePath} does not exist in current branch (${currentBranch})`,
-        file: jsonFilePath,
-        currentBranch,
-        targetBranch
+        message: `No JSON files found in folder: ${folderPath}`,
+        folder: folderPath,
+        currentBranch
       });
       return;
     }
     
-    if (!fileExistsInTarget) {
-      core.warning(`⚠️ File ${jsonFilePath} does not exist in target branch (${targetBranch})`);
-      await sendSlackNotification(slackWebhookUrl, slackChannel, {
-        type: 'warning',
-        title: 'JSON Comparison Warning',
-        message: `File ${jsonFilePath} does not exist in target branch (${targetBranch})`,
-        file: jsonFilePath,
-        currentBranch,
-        targetBranch
-      });
-      return;
+    core.info(`📄 Found ${jsonFiles.length} JSON file(s): ${jsonFiles.join(', ')}`);
+    
+    // Compare each JSON file
+    const results = [];
+    let hasDifferences = false;
+    
+    for (const jsonFile of jsonFiles) {
+      core.info(`🔍 Comparing file: ${jsonFile}`);
+      
+      try {
+        // Read local JSON file
+        const localJson = await readJsonFile(jsonFile);
+        if (!localJson) {
+          core.warning(`⚠️ Failed to read local file: ${jsonFile}`);
+          results.push({
+            file: jsonFile,
+            status: 'error',
+            message: 'Failed to read local file'
+          });
+          continue;
+        }
+        
+        // Fetch remote JSON file
+        const remoteUrl = `${baseUrl}/${jsonFile}`;
+        const remoteJson = await fetchJsonFromUrl(remoteUrl);
+        
+        if (!remoteJson) {
+          core.warning(`⚠️ Failed to fetch remote file: ${remoteUrl}`);
+          results.push({
+            file: jsonFile,
+            status: 'error',
+            message: 'Failed to fetch remote file'
+          });
+          continue;
+        }
+        
+        // Compare JSON files
+        const comparisonResult = compareJsonFiles(localJson, remoteJson, {
+          mode: comparisonMode,
+          ignoreKeys: ignoreKeys.split(',').map(key => key.trim()).filter(key => key)
+        });
+        
+        if (comparisonResult.areEqual) {
+          core.info(`✅ ${jsonFile} - Files are identical`);
+          results.push({
+            file: jsonFile,
+            status: 'identical',
+            message: 'Files are identical'
+          });
+        } else {
+          core.warning(`⚠️ ${jsonFile} - Files differ`);
+          hasDifferences = true;
+          results.push({
+            file: jsonFile,
+            status: 'different',
+            message: 'Files differ',
+            differences: comparisonResult.differences
+          });
+        }
+        
+      } catch (error) {
+        core.error(`❌ Error comparing ${jsonFile}: ${error.message}`);
+        results.push({
+          file: jsonFile,
+          status: 'error',
+          message: `Error: ${error.message}`
+        });
+      }
     }
     
-    // Read and parse JSON files
-    const currentJson = await readJsonFile(jsonFilePath);
-    const targetJson = await readJsonFileFromBranch(jsonFilePath, targetBranch);
-    
-    if (!currentJson || !targetJson) {
-      core.error('❌ Failed to read or parse JSON files');
-      return;
+    // Generate HTML report for differences
+    let reportPath = null;
+    if (hasDifferences) {
+      try {
+        const reportData = {
+          folder: folderPath,
+          currentBranch,
+          baseUrl,
+          results,
+          timestamp: new Date().toISOString()
+        };
+        
+        const reportFileName = `json-comparison-report-${Date.now()}.html`;
+        const reportDir = path.join(process.cwd(), 'reports');
+        reportPath = path.join(reportDir, reportFileName);
+        
+        await generateAndSaveReport(reportData, reportPath);
+        core.info(`📊 HTML report generated: ${reportPath}`);
+      } catch (error) {
+        core.warning(`⚠️ Failed to generate HTML report: ${error.message}`);
+      }
     }
     
-    // Compare JSON files
-    const comparisonResult = compareJsonFiles(currentJson, targetJson, {
-      mode: comparisonMode,
-      ignoreKeys: ignoreKeys.split(',').map(key => key.trim()).filter(key => key)
-    });
-    
-    if (comparisonResult.areEqual) {
-      core.info('✅ JSON files are identical');
-      await sendSlackNotification(slackWebhookUrl, slackChannel, {
-        type: 'success',
-        title: 'JSON Comparison Success',
-        message: `Files are identical between ${currentBranch} and ${targetBranch}`,
-        file: jsonFilePath,
-        currentBranch,
-        targetBranch
-      });
-    } else {
-      core.warning('⚠️ JSON files differ');
+    // Send summary notification only for failures and differences
+    if (hasDifferences) {
       await sendSlackNotification(slackWebhookUrl, slackChannel, {
         type: 'difference',
         title: 'JSON Comparison Alert',
-        message: `Files differ between ${currentBranch} and ${targetBranch}`,
-        file: jsonFilePath,
+        message: `Found differences in ${results.filter(r => r.status === 'different').length} file(s)`,
+        folder: folderPath,
         currentBranch,
-        targetBranch,
-        differences: comparisonResult.differences
+        baseUrl,
+        results: results,
+        reportPath: reportPath
       });
+    } else {
+      core.info('✅ All JSON files are identical - no Slack notification sent');
     }
     
   } catch (error) {
@@ -103,9 +166,9 @@ async function run() {
         type: 'error',
         title: 'JSON Comparison Error',
         message: `Workflow failed: ${error.message}`,
-        file: core.getInput('json-file-path'),
+        folder: core.getInput('folder-path'),
         currentBranch: await getCurrentBranch().catch(() => 'unknown'),
-        targetBranch: core.getInput('target-branch')
+        baseUrl: core.getInput('base-url')
       }
     );
   }
@@ -129,6 +192,76 @@ async function getCurrentBranch() {
     const context = github.context;
     return context.ref.replace('refs/heads/', '');
   }
+}
+
+async function findJsonFilesInFolder(folderPath, extensions, recursive = false) {
+  const jsonFiles = [];
+  
+  function scanDirectory(dirPath, relativePath = '') {
+    try {
+      const items = fs.readdirSync(dirPath);
+      
+      for (const item of items) {
+        const fullPath = path.join(dirPath, item);
+        const relativeItemPath = relativePath ? path.join(relativePath, item) : item;
+        const stat = fs.statSync(fullPath);
+        
+        if (stat.isDirectory() && recursive) {
+          scanDirectory(fullPath, relativeItemPath);
+        } else if (stat.isFile()) {
+          const ext = path.extname(item).toLowerCase();
+          if (extensions.some(extension => ext === `.${extension}`)) {
+            jsonFiles.push(relativeItemPath);
+          }
+        }
+      }
+    } catch (error) {
+      core.warning(`Failed to scan directory ${dirPath}: ${error.message}`);
+    }
+  }
+  
+  scanDirectory(folderPath);
+  return jsonFiles;
+}
+
+async function fetchJsonFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https:') ? https : http;
+    
+    const request = client.get(url, (response) => {
+      let data = '';
+      
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      response.on('end', () => {
+        try {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            const jsonData = JSON.parse(data);
+            resolve(jsonData);
+          } else {
+            core.warning(`HTTP ${response.statusCode} when fetching ${url}`);
+            resolve(null);
+          }
+        } catch (error) {
+          core.warning(`Failed to parse JSON from ${url}: ${error.message}`);
+          resolve(null);
+        }
+      });
+    });
+    
+    request.on('error', (error) => {
+      core.warning(`Failed to fetch ${url}: ${error.message}`);
+      resolve(null);
+    });
+    
+    request.setTimeout(30000, () => {
+      request.destroy();
+      core.warning(`Timeout fetching ${url}`);
+      resolve(null);
+    });
+  });
 }
 
 async function checkFileExists(filePath) {
@@ -278,7 +411,7 @@ function formatDifference(diffItem) {
 
 async function sendSlackNotification(webhookUrl, channel, data) {
   try {
-    const { type, title, message, file, currentBranch, targetBranch, differences } = data;
+    const { type, title, message, folder, currentBranch, baseUrl, results, reportPath } = data;
     
     let color = '#36a64f'; // Green for success
     let emoji = '✅';
@@ -312,8 +445,8 @@ async function sendSlackNotification(webhookUrl, channel, data) {
           title: `${emoji} ${title}`,
           fields: [
             {
-              title: 'File',
-              value: `\`${file}\``,
+              title: 'Folder',
+              value: `\`${folder}\``,
               short: true
             },
             {
@@ -322,8 +455,8 @@ async function sendSlackNotification(webhookUrl, channel, data) {
               short: true
             },
             {
-              title: 'Target Branch',
-              value: `\`${targetBranch}\``,
+              title: 'Base URL',
+              value: `\`${baseUrl}\``,
               short: true
             },
             {
@@ -338,18 +471,44 @@ async function sendSlackNotification(webhookUrl, channel, data) {
       ]
     };
     
-    // Add differences if available
-    if (differences && differences.length > 0) {
-      const differencesText = differences
-        .slice(0, 10) // Limit to first 10 differences
-        .map(diff => `• ${diff.description}`)
-        .join('\n');
+    // Add results summary if available
+    if (results && results.length > 0) {
+      const identicalCount = results.filter(r => r.status === 'identical').length;
+      const differentCount = results.filter(r => r.status === 'different').length;
+      const errorCount = results.filter(r => r.status === 'error').length;
       
       slackMessage.attachments[0].fields.push({
-        title: 'Differences',
-        value: differencesText + (differences.length > 10 ? '\n... and more' : ''),
-        short: false
+        title: 'Summary',
+        value: `✅ Identical: ${identicalCount}\n🔄 Different: ${differentCount}\n❌ Errors: ${errorCount}`,
+        short: true
       });
+      
+      // Add detailed results for different files
+      const differentFiles = results.filter(r => r.status === 'different');
+      if (differentFiles.length > 0) {
+        const differencesText = differentFiles
+          .slice(0, 5) // Limit to first 5 files
+          .map(result => {
+            const diffCount = result.differences ? result.differences.length : 0;
+            return `• \`${result.file}\` (${diffCount} differences)`;
+          })
+          .join('\n');
+        
+        slackMessage.attachments[0].fields.push({
+          title: 'Files with Differences',
+          value: differencesText + (differentFiles.length > 5 ? '\n... and more' : ''),
+          short: false
+        });
+      }
+      
+      // Add report information if available
+      if (reportPath) {
+        slackMessage.attachments[0].fields.push({
+          title: '📊 Detailed Report',
+          value: `A detailed HTML report has been generated with all differences.\nReport saved to: \`${reportPath}\``,
+          short: false
+        });
+      }
     }
     
     // Send to Slack using webhook
