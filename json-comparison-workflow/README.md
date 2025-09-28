@@ -97,7 +97,7 @@ Add these secrets to your repository settings:
 |-------|-------------|----------|---------|
 | `folder-path` | Folder path to scan for JSON files | Yes | `config` |
 | `base-url` | Base URL for remote JSON files | Yes | - |
-| `slack-webhook-url` | Slack webhook URL | Yes | - |
+| `slack-webhook-url` | Slack webhook URL (optional - workflow can handle notifications) | No | - |
 | `slack-channel` | Slack channel override | No | - |
 | `comparison-mode` | Comparison mode (strict\|lenient) | No | `strict` |
 | `ignore-keys` | Comma-separated keys to ignore | No | - |

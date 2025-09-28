@@ -14,7 +14,7 @@ async function run() {
     // Get inputs
     const folderPath = core.getInput('folder-path', { required: true });
     const baseUrl = core.getInput('base-url', { required: true });
-    const slackWebhookUrl = core.getInput('slack-webhook-url', { required: true });
+    const slackWebhookUrl = core.getInput('slack-webhook-url', { required: false });
     const slackChannel = core.getInput('slack-channel');
     const comparisonMode = core.getInput('comparison-mode') || 'strict';
     const ignoreKeys = core.getInput('ignore-keys') || '';
@@ -38,13 +38,15 @@ async function run() {
     
     if (jsonFiles.length === 0) {
       core.warning(`⚠️ No JSON files found in folder: ${folderPath}`);
-      await sendSlackNotification(slackWebhookUrl, slackChannel, {
-        type: 'warning',
-        title: 'JSON Comparison Warning',
-        message: `No JSON files found in folder: ${folderPath}`,
-        folder: folderPath,
-        currentBranch
-      });
+      if (slackWebhookUrl) {
+        await sendSlackNotification(slackWebhookUrl, slackChannel, {
+          type: 'warning',
+          title: 'JSON Comparison Warning',
+          message: `No JSON files found in folder: ${folderPath}`,
+          folder: folderPath,
+          currentBranch
+        });
+      }
       return;
     }
     
@@ -75,12 +77,8 @@ async function run() {
         const remoteJson = await fetchJsonFromUrl(remoteUrl);
         
         if (!remoteJson) {
-          core.warning(`⚠️ Failed to fetch remote file: ${remoteUrl}`);
-          results.push({
-            file: jsonFile,
-            status: 'error',
-            message: 'Failed to fetch remote file'
-          });
+          core.info(`ℹ️ Remote file not found, ignoring: ${remoteUrl}`);
+          // Skip this file instead of treating it as an error
           continue;
         }
         
@@ -142,7 +140,7 @@ async function run() {
     }
     
     // Send summary notification only for failures and differences
-    if (hasDifferences) {
+    if (hasDifferences && slackWebhookUrl) {
       await sendSlackNotification(slackWebhookUrl, slackChannel, {
         type: 'difference',
         title: 'JSON Comparison Alert',
@@ -153,24 +151,31 @@ async function run() {
         results: results,
         reportPath: reportPath
       });
+    } else if (hasDifferences) {
+      core.info('✅ Found differences - Slack notification will be sent by workflow');
     } else {
       core.info('✅ All JSON files are identical - no Slack notification sent');
     }
     
   } catch (error) {
     core.setFailed(`Action failed: ${error.message}`);
-    await sendSlackNotification(
-      core.getInput('slack-webhook-url'),
-      core.getInput('slack-channel'),
-      {
-        type: 'error',
-        title: 'JSON Comparison Error',
-        message: `Workflow failed: ${error.message}`,
-        folder: core.getInput('folder-path'),
-        currentBranch: await getCurrentBranch().catch(() => 'unknown'),
-        baseUrl: core.getInput('base-url')
-      }
-    );
+    const webhookUrl = core.getInput('slack-webhook-url', { required: false });
+    if (webhookUrl) {
+      await sendSlackNotification(
+        webhookUrl,
+        core.getInput('slack-channel'),
+        {
+          type: 'error',
+          title: 'JSON Comparison Error',
+          message: `Workflow failed: ${error.message}`,
+          folder: core.getInput('folder-path'),
+          currentBranch: await getCurrentBranch().catch(() => 'unknown'),
+          baseUrl: core.getInput('base-url')
+        }
+      );
+    } else {
+      core.info('❌ Workflow failed - Slack notification will be sent by workflow');
+    }
   }
 }
 
@@ -240,6 +245,9 @@ async function fetchJsonFromUrl(url) {
           if (response.statusCode >= 200 && response.statusCode < 300) {
             const jsonData = JSON.parse(data);
             resolve(jsonData);
+          } else if (response.statusCode === 404) {
+            core.info(`File not found (404): ${url} - will be ignored`);
+            resolve(null);
           } else {
             core.warning(`HTTP ${response.statusCode} when fetching ${url}`);
             resolve(null);

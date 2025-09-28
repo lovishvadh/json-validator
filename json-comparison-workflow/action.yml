@@ -17,10 +17,10 @@ inputs:
     description: 'Base URL for remote JSON files (e.g., https://api.example.com/config)'
     required: true
   
-  # Required: Slack webhook URL
+  # Optional: Slack webhook URL (if not provided, workflow will handle notifications)
   slack-webhook-url:
-    description: 'Slack webhook URL for notifications'
-    required: true
+    description: 'Slack webhook URL for notifications (optional - workflow can handle notifications)'
+    required: false
   
   # Optional: Slack channel override
   slack-channel:

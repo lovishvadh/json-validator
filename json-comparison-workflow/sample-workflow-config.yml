@@ -1,0 +1,116 @@
+# Sample Configuration for ICS JSON Comparison Workflow
+# This file shows how to configure the workflow for different scenarios
+
+# Basic Configuration
+basic_config:
+  folder_path: "config"
+  base_url: "https://api.example.com/config"
+  slack_channel: "C03SA9S4A4X"
+  comparison_mode: "strict"
+  file_extensions: "json"
+  recursive: false
+  runs: 1
+
+# Advanced Configuration with Multiple File Types
+advanced_config:
+  folder_path: "config"
+  base_url: "https://api.example.com/config"
+  slack_channel: "C03SA9S4A4X"
+  comparison_mode: "lenient"
+  ignore_keys: "timestamp,version,lastModified"
+  file_extensions: "json,jsonc,json5"
+  recursive: true
+  runs: 2
+
+# Production Configuration
+production_config:
+  folder_path: "production-config"
+  base_url: "https://prod-api.example.com/config"
+  slack_channel: "C03SA9S4A4X"
+  comparison_mode: "strict"
+  ignore_keys: "debug,test,development"
+  file_extensions: "json"
+  recursive: true
+  runs: 1
+
+# Development Configuration
+development_config:
+  folder_path: "dev-config"
+  base_url: "https://dev-api.example.com/config"
+  slack_channel: "C03SA9S4A4X"
+  comparison_mode: "lenient"
+  ignore_keys: "timestamp,version"
+  file_extensions: "json,jsonc"
+  recursive: true
+  runs: 3
+
+# Testing Configuration
+testing_config:
+  folder_path: "test-config"
+  base_url: "https://test-api.example.com/config"
+  slack_channel: "C03SA9S4A4X"
+  comparison_mode: "strict"
+  ignore_keys: ""
+  file_extensions: "json"
+  recursive: false
+  runs: 1
+
+# Multi-Environment Configuration
+multi_env_config:
+  environments:
+    - name: "staging"
+      folder_path: "staging-config"
+      base_url: "https://staging-api.example.com/config"
+      slack_channel: "C03SA9S4A4X"
+      comparison_mode: "strict"
+      ignore_keys: "timestamp"
+      file_extensions: "json"
+      recursive: true
+      runs: 1
+    
+    - name: "production"
+      folder_path: "production-config"
+      base_url: "https://prod-api.example.com/config"
+      slack_channel: "C03SA9S4A4X"
+      comparison_mode: "strict"
+      ignore_keys: "debug,test"
+      file_extensions: "json"
+      recursive: true
+      runs: 1
+
+# Slack Channel Configuration
+slack_channels:
+  development: "C03SA9S4A4X"  # #json-comparison-dev
+  staging: "C03SA9S4A4X"       # #json-comparison-staging
+  production: "C03SA9S4A4X"   # #json-comparison-prod
+  alerts: "C03SA9S4A4X"       # #json-comparison-alerts
+
+# File Extension Options
+file_extensions:
+  json_only: "json"
+  json_variants: "json,jsonc,json5"
+  all_text: "json,jsonc,json5,txt,md"
+
+# Comparison Mode Examples
+comparison_modes:
+  strict: "strict"      # Exact match required
+  lenient: "lenient"    # Allow minor differences
+
+# Ignore Keys Examples
+ignore_keys:
+  timestamps: "timestamp,createdAt,updatedAt"
+  versions: "version,revision,build"
+  debug: "debug,test,development"
+  all_common: "timestamp,version,debug,test,development,lastModified"
+
+# Recursive Scanning Examples
+recursive_options:
+  flat_structure: false    # Only scan specified folder
+  nested_structure: true   # Scan subfolders recursively
+
+# Parallel Runs Examples
+parallel_runs:
+  single: 1      # Single comparison run
+  double: 2      # Two parallel runs
+  triple: 3      # Three parallel runs
+  max: 5         # Maximum recommended parallel runs
