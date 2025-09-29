@@ -236,6 +236,10 @@ jobs:
               if (reportPath) {
                 console.log(`report_path=${reportPath}` >> process.env.GITHUB_OUTPUT);
               }
+              
+              // Create summary for Slack
+              const summary = createSlackSummary(results);
+              console.log(`slack_summary=${summary}` >> process.env.GITHUB_OUTPUT);
 
             } catch (error) {
               console.log(`❌ Action failed: ${error.message}`);
@@ -337,16 +341,62 @@ jobs:
           }
 
           function compareJsonFiles(localJson, remoteJson, options = {}) {
-            const differences = diff(localJson, remoteJson);
+            // Normalize both JSON objects to handle key order differences
+            const normalizedLocal = normalizeJsonObject(localJson);
+            const normalizedRemote = normalizeJsonObject(remoteJson);
+            
+            const differences = diff(normalizedLocal, normalizedRemote);
             
             if (!differences) {
               return { identical: true, differences: [] };
             }
             
+            // Filter out position-only differences and focus on actual content changes
+            const meaningfulDifferences = differences.filter(d => isMeaningfulDifference(d));
+            
+            if (meaningfulDifferences.length === 0) {
+              return { identical: true, differences: [] };
+            }
+            
             return {
               identical: false,
-              differences: differences.map(d => formatDifference(d))
+              differences: meaningfulDifferences.map(d => formatDifference(d))
             };
+          }
+
+          function normalizeJsonObject(obj) {
+            if (obj === null || typeof obj !== 'object') {
+              return obj;
+            }
+            
+            if (Array.isArray(obj)) {
+              return obj.map(item => normalizeJsonObject(item));
+            }
+            
+            // Sort object keys recursively
+            const sortedObj = {};
+            const sortedKeys = Object.keys(obj).sort();
+            for (const key of sortedKeys) {
+              sortedObj[key] = normalizeJsonObject(obj[key]);
+            }
+            
+            return sortedObj;
+          }
+
+          function isMeaningfulDifference(diff) {
+            // Only report differences that represent actual content changes
+            switch (diff.kind) {
+              case 'N': // New property added
+                return true;
+              case 'D': // Property deleted
+                return true;
+              case 'E': // Property value changed
+                return true;
+              case 'A': // Array item changed
+                return true;
+              default:
+                return false;
+            }
           }
 
           function formatDifference(diff) {
@@ -354,15 +404,85 @@ jobs:
             const kind = diff.kind;
             
             switch (kind) {
-              case 'N':
-                return { path, kind: 'added', value: diff.rhs };
-              case 'D':
-                return { path, kind: 'removed', value: diff.lhs };
-              case 'E':
-                return { path, kind: 'modified', oldValue: diff.lhs, newValue: diff.rhs };
+              case 'N': // New property added
+                return { 
+                  path, 
+                  kind: 'added', 
+                  value: diff.rhs,
+                  description: `Property '${path}' was added`
+                };
+              case 'D': // Property deleted
+                return { 
+                  path, 
+                  kind: 'removed', 
+                  value: diff.lhs,
+                  description: `Property '${path}' was removed`
+                };
+              case 'E': // Property value changed
+                return { 
+                  path, 
+                  kind: 'modified', 
+                  oldValue: diff.lhs, 
+                  newValue: diff.rhs,
+                  description: `Property '${path}' was changed from '${JSON.stringify(diff.lhs)}' to '${JSON.stringify(diff.rhs)}'`
+                };
+              case 'A': // Array item changed
+                return {
+                  path,
+                  kind: 'array_change',
+                  index: diff.index,
+                  item: diff.item,
+                  description: `Array item at index ${diff.index} in '${path}' was ${diff.item.kind}`
+                };
               default:
-                return { path, kind: 'unknown', diff };
+                return { 
+                  path, 
+                  kind: 'unknown', 
+                  diff,
+                  description: `Unknown change type in '${path}'`
+                };
             }
+          }
+
+          function createSlackSummary(results) {
+            const differentFiles = results.filter(r => r.status === 'different');
+            const identicalFiles = results.filter(r => r.status === 'identical');
+            const errorFiles = results.filter(r => r.status === 'error');
+            
+            let summary = '';
+            
+            if (differentFiles.length > 0) {
+              summary += `*📁 Files with Differences (${differentFiles.length}):*\n`;
+              differentFiles.forEach(file => {
+                summary += `• \`${file.file}\` - ${file.differences.length} change(s)\n`;
+                // Show first 3 differences for each file
+                file.differences.slice(0, 3).forEach(diff => {
+                  summary += `  ◦ ${diff.description}\n`;
+                });
+                if (file.differences.length > 3) {
+                  summary += `  ◦ ... and ${file.differences.length - 3} more changes\n`;
+                }
+              });
+              summary += '\n';
+            }
+            
+            if (identicalFiles.length > 0) {
+              summary += `*✅ Identical Files (${identicalFiles.length}):*\n`;
+              identicalFiles.forEach(file => {
+                summary += `• \`${file.file}\`\n`;
+              });
+              summary += '\n';
+            }
+            
+            if (errorFiles.length > 0) {
+              summary += `*⚠️ Files with Errors (${errorFiles.length}):*\n`;
+              errorFiles.forEach(file => {
+                summary += `• \`${file.file}\` - ${file.message}\n`;
+              });
+              summary += '\n';
+            }
+            
+            return summary.trim();
           }
 
           async function generateAndSaveReport(data, reportPath) {
@@ -421,7 +541,12 @@ jobs:
                 '<h4>' + result.file + '</h4>' +
                 '<p><strong>Status:</strong> ' + result.status.toUpperCase() + '</p>' +
                 '<p><strong>Message:</strong> ' + result.message + '</p>' +
-                (result.differences ? '<p><strong>Differences:</strong> ' + result.differences.length + ' changes found</p>' : '') +
+                (result.differences ? 
+                  '<p><strong>Differences:</strong> ' + result.differences.length + ' changes found</p>' +
+                  '<ul>' + result.differences.map(diff => 
+                    '<li><strong>' + diff.kind.toUpperCase() + ':</strong> ' + diff.description + '</li>'
+                  ).join('') + '</ul>' 
+                  : '') +
                 '</div>'
               ).join('') +
               '</div>' +
@@ -549,6 +674,9 @@ jobs:
             *Base URL:* `${{ needs.log-inputs.outputs.base_url }}`
             *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
             *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
+            
+            ${{ needs.run-comparison.outputs.slack_summary }}
+            
             *Report:* <https://github.aexp.com/pages/amex-eng/json-validator/reports/|Click here to view the full report>
             *Report Link:* https://github.aexp.com/pages/amex-eng/json-validator/reports/
             _For Developers_
@@ -570,6 +698,9 @@ jobs:
             *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
             *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
             *Job ID:* `${{ github.run_id }}`
+            
+            ${{ needs.run-comparison.outputs.slack_summary }}
+            
             *Report:* <https://github.aexp.com/pages/amex-eng/json-validator/reports/|Click here to view the full report>
             *Report Link:* https://github.aexp.com/pages/amex-eng/json-validator/reports/
             Please check the report or contact the JSON Comparison team for details.
