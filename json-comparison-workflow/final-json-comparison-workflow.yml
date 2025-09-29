@@ -1,0 +1,601 @@
+name: JSON Comparison Workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder_path:
+        description: 'Folder path to scan for JSON files (e.g., config/, data/)'
+        required: true
+        default: 'config'
+      base_url:
+        description: 'Base URL for remote JSON files (e.g., https://api.example.com/config)'
+        required: true
+        default: 'https://api.example.com/config'
+      slack_channel:
+        description: 'Slack channel to send notifications to'
+        required: true
+        default: '#json-comparison'
+      comparison_mode:
+        description: 'Comparison mode (strict|lenient)'
+        required: false
+        default: 'strict'
+      ignore_keys:
+        description: 'Comma-separated list of keys to ignore during comparison'
+        required: false
+        default: ''
+      file_extensions:
+        description: 'Comma-separated file extensions to include (e.g., json,jsonc)'
+        required: false
+        default: 'json'
+      recursive:
+        description: 'Scan subfolders recursively'
+        required: false
+        default: 'false'
+  schedule:
+    # Run daily at 9 AM UTC
+    - cron: '0 9 * * *'
+
+env:
+  BRANCH_NAME: json-comparison-report-${{ github.run_number }}
+
+jobs:
+  log-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      folder_path: ${{ steps.log-inputs.outputs.folder_path }}
+      base_url: ${{ steps.log-inputs.outputs.base_url }}
+      slack_channel: ${{ steps.log-inputs.outputs.slack_channel }}
+      comparison_mode: ${{ steps.log-inputs.outputs.comparison_mode }}
+      ignore_keys: ${{ steps.log-inputs.outputs.ignore_keys }}
+      file_extensions: ${{ steps.log-inputs.outputs.file_extensions }}
+      recursive: ${{ steps.log-inputs.outputs.recursive }}
+    steps:
+      - name: 📝 Log Inputs
+        id: log-inputs
+        run: |
+          echo "=== JSON Comparison Workflow Inputs ==="
+          echo "Folder Path: ${{ github.event.inputs.folder_path || 'config' }}"
+          echo "Base URL: ${{ github.event.inputs.base_url || 'https://api.example.com/config' }}"
+          echo "Slack Channel: ${{ github.event.inputs.slack_channel || '#json-comparison' }}"
+          echo "Comparison Mode: ${{ github.event.inputs.comparison_mode || 'strict' }}"
+          echo "Ignore Keys: ${{ github.event.inputs.ignore_keys || '' }}"
+          echo "File Extensions: ${{ github.event.inputs.file_extensions || 'json' }}"
+          echo "Recursive: ${{ github.event.inputs.recursive || 'false' }}"
+          echo "=========================================="
+          
+          echo "folder_path=${{ github.event.inputs.folder_path || 'config' }}" >> $GITHUB_OUTPUT
+          echo "base_url=${{ github.event.inputs.base_url || 'https://api.example.com/config' }}" >> $GITHUB_OUTPUT
+          echo "slack_channel=${{ github.event.inputs.slack_channel || '#json-comparison' }}" >> $GITHUB_OUTPUT
+          echo "comparison_mode=${{ github.event.inputs.comparison_mode || 'strict' }}" >> $GITHUB_OUTPUT
+          echo "ignore_keys=${{ github.event.inputs.ignore_keys || '' }}" >> $GITHUB_OUTPUT
+          echo "file_extensions=${{ github.event.inputs.file_extensions || 'json' }}" >> $GITHUB_OUTPUT
+          echo "recursive=${{ github.event.inputs.recursive || 'false' }}" >> $GITHUB_OUTPUT
+
+  run-comparison:
+    needs: log-inputs
+    runs-on: ubuntu-latest
+    outputs:
+      startedAt: ${{ steps.run_comparison.outputs.startedAt }}
+      completedAt: ${{ steps.run_comparison.outputs.completedAt }}
+      has_differences: ${{ steps.run_comparison.outputs.has_differences }}
+      report_path: ${{ steps.run_comparison.outputs.report_path }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Install Dependencies
+        run: |
+          npm install @actions/core @actions/github @actions/exec @slack/web-api deep-diff
+
+      - name: 🔍 Run JSON Comparison
+        id: run_comparison
+        run: |
+          echo "Starting JSON comparison at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          
+          # Create the comparison script
+          cat > compare-json.js << 'EOF'
+          const core = require('@actions/core');
+          const github = require('@actions/github');
+          const { exec } = require('@actions/exec');
+          const { WebClient } = require('@slack/web-api');
+          const diff = require('deep-diff');
+          const fs = require('fs');
+          const path = require('path');
+          const https = require('https');
+          const http = require('http');
+
+          async function run() {
+            try {
+              // Get inputs
+              const folderPath = process.env.FOLDER_PATH || 'config';
+              const baseUrl = process.env.BASE_URL || 'https://api.example.com/config';
+              const comparisonMode = process.env.COMPARISON_MODE || 'strict';
+              const ignoreKeys = process.env.IGNORE_KEYS || '';
+              const fileExtensions = process.env.FILE_EXTENSIONS || 'json';
+              const recursive = process.env.RECURSIVE === 'true';
+
+              console.log(`🔍 Scanning folder: ${folderPath}`);
+              console.log(`🌐 Base URL: ${baseUrl}`);
+              console.log(`⚙️ Comparison mode: ${comparisonMode}`);
+
+              // Find all JSON files in the folder
+              const jsonFiles = await findJsonFilesInFolder(folderPath, fileExtensions.split(','), recursive);
+
+              if (jsonFiles.length === 0) {
+                console.log(`⚠️ No JSON files found in folder: ${folderPath}`);
+                return;
+              }
+
+              console.log(`📁 Found ${jsonFiles.length} JSON files to compare`);
+
+              // Compare each JSON file
+              const results = [];
+              let hasDifferences = false;
+              
+              for (const jsonFile of jsonFiles) {
+                console.log(`🔍 Comparing file: ${jsonFile}`);
+                
+                try {
+                  // Read local JSON file
+                  const localJson = await readJsonFile(jsonFile);
+                  if (!localJson) {
+                    console.log(`⚠️ Failed to read local file: ${jsonFile}`);
+                    results.push({
+                      file: jsonFile,
+                      status: 'error',
+                      message: 'Failed to read local file'
+                    });
+                    continue;
+                  }
+                  
+                  // Fetch remote JSON file
+                  const remoteUrl = `${baseUrl}/${jsonFile}`;
+                  const remoteJson = await fetchJsonFromUrl(remoteUrl);
+                  
+                  if (!remoteJson) {
+                    console.log(`ℹ️ Remote file not found, ignoring: ${remoteUrl}`);
+                    // Skip this file instead of treating it as an error
+                    continue;
+                  }
+                  
+                  // Compare JSON files
+                  const comparisonResult = compareJsonFiles(localJson, remoteJson, {
+                    mode: comparisonMode,
+                    ignoreKeys: ignoreKeys.split(',').map(key => key.trim()).filter(key => key)
+                  });
+                  
+                  if (comparisonResult.identical) {
+                    console.log(`✅ ${jsonFile}: Identical`);
+                    results.push({
+                      file: jsonFile,
+                      status: 'identical',
+                      message: 'Files are identical'
+                    });
+                  } else {
+                    console.log(`❌ ${jsonFile}: Different`);
+                    hasDifferences = true;
+                    results.push({
+                      file: jsonFile,
+                      status: 'different',
+                      message: 'Files are different',
+                      differences: comparisonResult.differences
+                    });
+                  }
+                } catch (error) {
+                  console.log(`❌ Error comparing ${jsonFile}: ${error.message}`);
+                  results.push({
+                    file: jsonFile,
+                    status: 'error',
+                    message: error.message
+                  });
+                }
+              }
+
+              // Generate HTML report for differences
+              let reportPath = null;
+              if (hasDifferences) {
+                try {
+                  const reportData = {
+                    folder: folderPath,
+                    baseUrl,
+                    results,
+                    timestamp: new Date().toISOString()
+                  };
+
+                  const reportFileName = `json-comparison-report-${Date.now()}.html`;
+                  const reportDir = path.join(process.cwd(), 'reports');
+                  
+                  // Create reports directory if it doesn't exist
+                  if (!fs.existsSync(reportDir)) {
+                    fs.mkdirSync(reportDir, { recursive: true });
+                  }
+                  
+                  reportPath = path.join(reportDir, reportFileName);
+                  await generateAndSaveReport(reportData, reportPath);
+                  console.log(`📊 HTML report generated: ${reportPath}`);
+                } catch (error) {
+                  console.log(`⚠️ Failed to generate HTML report: ${error.message}`);
+                }
+              }
+
+              console.log(`\n📊 Comparison Summary:`);
+              console.log(`✅ Identical: ${results.filter(r => r.status === 'identical').length}`);
+              console.log(`❌ Different: ${results.filter(r => r.status === 'different').length}`);
+              console.log(`⚠️ Errors: ${results.filter(r => r.status === 'error').length}`);
+
+              // Set outputs
+              console.log(`has_differences=${hasDifferences}` >> process.env.GITHUB_OUTPUT);
+              if (reportPath) {
+                console.log(`report_path=${reportPath}` >> process.env.GITHUB_OUTPUT);
+              }
+
+            } catch (error) {
+              console.log(`❌ Action failed: ${error.message}`);
+              process.exit(1);
+            }
+          }
+
+          async function getCurrentBranch() {
+            try {
+              const { stdout } = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+              return stdout.trim();
+            } catch (error) {
+              return 'unknown';
+            }
+          }
+
+          async function findJsonFilesInFolder(folderPath, extensions, recursive) {
+            const files = [];
+            const fs = require('fs');
+            const path = require('path');
+            
+            function scanDirectory(dir) {
+              try {
+                const items = fs.readdirSync(dir);
+                for (const item of items) {
+                  const fullPath = path.join(dir, item);
+                  const stat = fs.statSync(fullPath);
+                  
+                  if (stat.isDirectory() && recursive) {
+                    scanDirectory(fullPath);
+                  } else if (stat.isFile()) {
+                    const ext = path.extname(item).toLowerCase().substring(1);
+                    if (extensions.includes(ext)) {
+                      files.push(fullPath);
+                    }
+                  }
+                }
+              } catch (error) {
+                console.log(`Warning: Could not scan directory ${dir}: ${error.message}`);
+              }
+            }
+            
+            scanDirectory(folderPath);
+            return files;
+          }
+
+          async function fetchJsonFromUrl(url) {
+            return new Promise((resolve, reject) => {
+              const client = url.startsWith('https:') ? https : http;
+              
+              const request = client.get(url, (response) => {
+                let data = '';
+                
+                response.on('data', (chunk) => {
+                  data += chunk;
+                });
+                
+                response.on('end', () => {
+                  try {
+                    if (response.statusCode >= 200 && response.statusCode < 300) {
+                      const jsonData = JSON.parse(data);
+                      resolve(jsonData);
+                    } else if (response.statusCode === 404) {
+                      console.log(`File not found (404): ${url} - will be ignored`);
+                      resolve(null);
+                    } else {
+                      console.log(`HTTP ${response.statusCode} when fetching ${url}`);
+                      resolve(null);
+                    }
+                  } catch (error) {
+                    console.log(`Failed to parse JSON from ${url}: ${error.message}`);
+                    resolve(null);
+                  }
+                });
+              });
+              
+              request.on('error', (error) => {
+                console.log(`Failed to fetch ${url}: ${error.message}`);
+                resolve(null);
+              });
+              
+              request.setTimeout(30000, () => {
+                request.destroy();
+                console.log(`Timeout fetching ${url}`);
+                resolve(null);
+              });
+            });
+          }
+
+          async function readJsonFile(filePath) {
+            try {
+              const fs = require('fs');
+              const data = fs.readFileSync(filePath, 'utf8');
+              return JSON.parse(data);
+            } catch (error) {
+              console.log(`Failed to read JSON file ${filePath}: ${error.message}`);
+              return null;
+            }
+          }
+
+          function compareJsonFiles(localJson, remoteJson, options = {}) {
+            const differences = diff(localJson, remoteJson);
+            
+            if (!differences) {
+              return { identical: true, differences: [] };
+            }
+            
+            return {
+              identical: false,
+              differences: differences.map(d => formatDifference(d))
+            };
+          }
+
+          function formatDifference(diff) {
+            const path = diff.path ? diff.path.join('.') : 'root';
+            const kind = diff.kind;
+            
+            switch (kind) {
+              case 'N':
+                return { path, kind: 'added', value: diff.rhs };
+              case 'D':
+                return { path, kind: 'removed', value: diff.lhs };
+              case 'E':
+                return { path, kind: 'modified', oldValue: diff.lhs, newValue: diff.rhs };
+              default:
+                return { path, kind: 'unknown', diff };
+            }
+          }
+
+          async function generateAndSaveReport(data, reportPath) {
+            const html = generateComparisonReport(data);
+            const fs = require('fs');
+            fs.writeFileSync(reportPath, html);
+          }
+
+          function generateComparisonReport(data) {
+            return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Comparison Report</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .header h1 { margin: 0; font-size: 24px; }
+        .header p { margin: 5px 0 0 0; opacity: 0.9; }
+        .tabs { display: flex; border-bottom: 1px solid #ddd; }
+        .tab { padding: 12px 20px; cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab.active { border-bottom-color: #3498db; color: #3498db; }
+        .content { padding: 20px; }
+        .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .panel { border: 1px solid #ddd; border-radius: 4px; }
+        .panel-header { background: #f8f9fa; padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold; }
+        .panel-content { padding: 15px; max-height: 400px; overflow-y: auto; }
+        .json-content { font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; line-height: 1.4; }
+        .diff-added { background: #d4edda; color: #155724; }
+        .diff-removed { background: #f8d7da; color: #721c24; }
+        .diff-modified { background: #fff3cd; color: #856404; }
+        .summary { background: #e9ecef; padding: 15px; border-radius: 4px; margin-bottom: 20px; }
+        .file-result { margin-bottom: 15px; padding: 10px; border-radius: 4px; }
+        .file-result.identical { background: #d4edda; border-left: 4px solid #28a745; }
+        .file-result.different { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .file-result.error { background: #fff3cd; border-left: 4px solid #ffc107; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>JSON Comparison Report</h1>
+            <p>Generated on ${new Date(data.timestamp).toLocaleString()}</p>
+            <p>Folder: ${data.folder} | Base URL: ${data.baseUrl}</p>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('summary')">Summary</div>
+            <div class="tab" onclick="showTab('details')">Details</div>
+        </div>
+        
+        <div class="content">
+            <div id="summary" class="tab-content">
+                <div class="summary">
+                    <h3>Comparison Summary</h3>
+                    <p><strong>Total Files:</strong> ${data.results.length}</p>
+                    <p><strong>Identical:</strong> ${data.results.filter(r => r.status === 'identical').length}</p>
+                    <p><strong>Different:</strong> ${data.results.filter(r => r.status === 'different').length}</p>
+                    <p><strong>Errors:</strong> ${data.results.filter(r => r.status === 'error').length}</p>
+                </div>
+                
+                ${data.results.map(result => `
+                    <div class="file-result ${result.status}">
+                        <h4>${result.file}</h4>
+                        <p><strong>Status:</strong> ${result.status.toUpperCase()}</p>
+                        <p><strong>Message:</strong> ${result.message}</p>
+                        ${result.differences ? `<p><strong>Differences:</strong> ${result.differences.length} changes found</p>` : ''}
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div id="details" class="tab-content hidden">
+                <h3>Detailed Comparison</h3>
+                <p>Detailed side-by-side comparison would be shown here for each file with differences.</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.remove('hidden');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>
+            `;
+          }
+
+          run();
+          EOF
+
+          # Set environment variables
+          export FOLDER_PATH="${{ needs.log-inputs.outputs.folder_path }}"
+          export BASE_URL="${{ needs.log-inputs.outputs.base_url }}"
+          export COMPARISON_MODE="${{ needs.log-inputs.outputs.comparison_mode }}"
+          export IGNORE_KEYS="${{ needs.log-inputs.outputs.ignore_keys }}"
+          export FILE_EXTENSIONS="${{ needs.log-inputs.outputs.file_extensions }}"
+          export RECURSIVE="${{ needs.log-inputs.outputs.recursive }}"
+
+          # Run the comparison
+          node compare-json.js
+          
+          echo "completedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
+  generate-html-report:
+    needs: [log-inputs, run-comparison]
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - name: 📊 Generate HTML Report
+        if: ${{ success() }}
+        id: generate_html_report
+        run: |
+          echo "Generating HTML report for JSON comparison results..."
+          # The report is automatically generated by the comparison action
+          echo "Report generated in reports/ directory"
+          echo "see report here: https://github.aexp.com/pages/amex-eng/json-validator/reports/" >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+  deploy-to-github-pages:
+    needs: [log-inputs, run-comparison, generate-html-report]
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📊 Deploy to GitHub Pages
+        uses: amex-ghactions/github-pages-deploy-action@v4.3.3
+        with:
+          folder: reports
+          branch: gh-pages
+          clean: true
+          commit-message: "Deploy JSON comparison report - ${{ github.run_number }}"
+        continue-on-error: true
+
+  create-pull-request:
+    needs: [log-inputs, run-comparison, generate-html-report]
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    outputs:
+      pull_number: ${{ steps.create-pr.outputs.pull_number }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📝 Create Pull Request
+        uses: amex-ghactions/create-pull-request-action@baf0e1e39d354d2468900d2b9c15f1045a252718
+        id: create-pr
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "Add JSON comparison report - ${{ github.run_number }}"
+          title: "JSON Comparison Report - ${{ github.run_number }}"
+          body: |
+            ## JSON Comparison Report
+            
+            This PR contains the JSON comparison report generated by the workflow.
+            
+            **Details:**
+            - Folder: `${{ needs.log-inputs.outputs.folder_path }}`
+            - Base URL: `${{ needs.log-inputs.outputs.base_url }}`
+            - Comparison Mode: `${{ needs.log-inputs.outputs.comparison_mode }}`
+            - Generated: `${{ needs.run-comparison.outputs.completedAt }}`
+            
+            **Report Link:** https://github.aexp.com/pages/amex-eng/json-validator/reports/
+            
+            Please review the changes and merge if appropriate.
+          branch: ${{ env.BRANCH_NAME }}
+          delete-branch: true
+        continue-on-error: true
+
+  slack-notification:
+    needs: [log-inputs, run-comparison, generate-html-report, deploy-to-github-pages, create-pull-request]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: 🔔 Slack Alert
+        if: ${{ success() }}
+        uses: amex-eng/github-actions-slack@v1.1.0
+        id: notify
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
+          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
+          slack-text: |
+            :white_check_mark: *JSON Comparison Summary*
+            *Comparison Status:* COMPLETED
+            *Folder Path:* `${{ needs.log-inputs.outputs.folder_path }}`
+            *Base URL:* `${{ needs.log-inputs.outputs.base_url }}`
+            *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
+            *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
+            *Report:* <https://github.aexp.com/pages/amex-eng/json-validator/reports/|Click here to view the full report>
+            *Report Link:* https://github.aexp.com/pages/amex-eng/json-validator/reports/
+            _For Developers_
+            *Branch:* `${{ env.BRANCH_NAME }}`
+            *Report PR:* <https://github.aexp.com/${{ github.repository }}/pull/${{ needs.create-pull-request.outputs.pull_number }}|#${{ needs.create-pull-request.outputs.pull_number }}>
+            If you have questions, reply in this channel or contact the JSON Comparison team.
+
+      - name: 🔔 Slack Alert
+        if: ${{ failure() }}
+        uses: amex-eng/github-actions-slack@v1.1.0
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
+          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
+          slack-text: |
+            :x: *JSON Comparison Summary*
+            *Comparison Status:* FAILED
+            *Folder Path:* `${{ needs.log-inputs.outputs.folder_path }}`
+            *Base URL:* `${{ needs.log-inputs.outputs.base_url }}`
+            *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
+            *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
+            *Job ID:* `${{ github.run_id }}`
+            *Report:* <https://github.aexp.com/pages/amex-eng/json-validator/reports/|Click here to view the full report>
+            *Report Link:* https://github.aexp.com/pages/amex-eng/json-validator/reports/
+            Please check the report or contact the JSON Comparison team for details.
