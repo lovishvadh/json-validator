@@ -552,16 +552,19 @@ jobs:
               summary += `\n`;
               
               differentFiles.forEach((file, index) => {
-                // Escape special characters in file names
+                // Escape special characters in file names and make them bold
                 const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
-                summary += `\n${index + 1}. ${safeFileName}`;
+                summary += `\n${index + 1}. *${safeFileName}*`;
                 summary += `\nFound ${file.differences.length} change(s):`;
                 
                 // Show first 3 differences with proper formatting
                 file.differences.slice(0, 3).forEach((diff, diffIndex) => {
                   const icon = diff.kind === 'added' ? '➕' : diff.kind === 'removed' ? '➖' : '🔄';
-                  // Escape special characters in descriptions
-                  const safeDescription = diff.description.replace(/[*_`]/g, '\\$&');
+                  // Escape special characters and truncate long descriptions
+                  let safeDescription = diff.description.replace(/[*_`]/g, '\\$&');
+                  if (safeDescription.length > 100) {
+                    safeDescription = safeDescription.substring(0, 97) + '...';
+                  }
                   summary += `\n${diffIndex + 1}. ${icon} ${safeDescription}`;
                 });
                 
@@ -575,9 +578,9 @@ jobs:
               summary += `\n\n⚠️ Files with Problems (${errorFiles.length}):`;
               
               errorFiles.forEach((file, index) => {
-                // Escape special characters in file names
+                // Escape special characters in file names and make them bold
                 const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
-                summary += `\n\n${index + 1}. ${safeFileName}`;
+                summary += `\n\n${index + 1}. *${safeFileName}*`;
                 summary += `\n❌ ${file.message}`;
               });
             }
