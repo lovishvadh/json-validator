@@ -549,28 +549,31 @@ jobs:
             // Only show files with actual issues (differences or errors)
             if (differentFiles.length > 0) {
               summary += `🚨 *Files with Changes (${differentFiles.length}):*\n\n`;
+              
               differentFiles.forEach((file, index) => {
                 summary += `*${index + 1}. ${file.file}*\n`;
-                summary += `   Found ${file.differences.length} change(s):\n`;
+                summary += `Found ${file.differences.length} change(s):\n\n`;
                 
-                // Show first 3 differences in a readable format
-                file.differences.slice(0, 3).forEach(diff => {
+                // Show first 3 differences with proper formatting
+                file.differences.slice(0, 3).forEach((diff, diffIndex) => {
                   const icon = diff.kind === 'added' ? '➕' : diff.kind === 'removed' ? '➖' : '🔄';
-                  summary += `   ${icon} ${diff.description}\n`;
+                  summary += `${diffIndex + 1}. ${icon} ${diff.description}\n`;
                 });
                 
                 if (file.differences.length > 3) {
-                  summary += `   ... and ${file.differences.length - 3} more changes\n`;
+                  summary += `... and ${file.differences.length - 3} more changes\n`;
                 }
+                
                 summary += '\n';
               });
             }
             
             if (errorFiles.length > 0) {
               summary += `⚠️ *Files with Problems (${errorFiles.length}):*\n\n`;
+              
               errorFiles.forEach((file, index) => {
                 summary += `*${index + 1}. ${file.file}*\n`;
-                summary += `   ❌ ${file.message}\n\n`;
+                summary += `❌ ${file.message}\n\n`;
               });
             }
             
