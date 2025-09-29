@@ -244,7 +244,11 @@ jobs:
               
               // Also write to file for GitHub Actions to read
               const fs = require('fs');
-              fs.writeFileSync('slack_summary.txt', summary);
+              try {
+                fs.writeFileSync('slack_summary.txt', summary);
+              } catch (error) {
+                console.log(`Warning: Could not write slack summary file: ${error.message}`);
+              }
 
             } catch (error) {
               console.log(`❌ Action failed: ${error.message}`);
@@ -346,27 +350,114 @@ jobs:
           }
 
           function compareJsonFiles(localJson, remoteJson, options = {}) {
-            // Normalize both JSON objects to handle key order differences
-            const normalizedLocal = normalizeJsonObject(localJson);
-            const normalizedRemote = normalizeJsonObject(remoteJson);
+            // Use deep comparison that ignores key order completely
+            const differences = deepCompare(localJson, remoteJson);
             
-            const differences = diff(normalizedLocal, normalizedRemote);
-            
-            if (!differences) {
-              return { identical: true, differences: [] };
-            }
-            
-            // Filter out position-only differences and focus on actual content changes
-            const meaningfulDifferences = differences.filter(d => isMeaningfulDifference(d));
-            
-            if (meaningfulDifferences.length === 0) {
+            if (differences.length === 0) {
               return { identical: true, differences: [] };
             }
             
             return {
               identical: false,
-              differences: meaningfulDifferences.map(d => formatDifference(d))
+              differences: differences.map(d => formatDifference(d))
             };
+          }
+
+          function deepCompare(obj1, obj2, path = []) {
+            const differences = [];
+            
+            // Handle null/undefined cases
+            if (obj1 === null && obj2 === null) return differences;
+            if (obj1 === null || obj2 === null) {
+              differences.push({
+                path: path.join('.'),
+                kind: 'E',
+                lhs: obj1,
+                rhs: obj2,
+                description: `Value changed from ${JSON.stringify(obj1)} to ${JSON.stringify(obj2)}`
+              });
+              return differences;
+            }
+            
+            // Handle different types
+            if (typeof obj1 !== typeof obj2) {
+              differences.push({
+                path: path.join('.'),
+                kind: 'E',
+                lhs: obj1,
+                rhs: obj2,
+                description: `Type changed from ${typeof obj1} to ${typeof obj2}`
+              });
+              return differences;
+            }
+            
+            // Handle primitives
+            if (typeof obj1 !== 'object') {
+              if (obj1 !== obj2) {
+                differences.push({
+                  path: path.join('.'),
+                  kind: 'E',
+                  lhs: obj1,
+                  rhs: obj2,
+                  description: `Value changed from ${JSON.stringify(obj1)} to ${JSON.stringify(obj2)}`
+                });
+              }
+              return differences;
+            }
+            
+            // Handle arrays
+            if (Array.isArray(obj1) && Array.isArray(obj2)) {
+              if (obj1.length !== obj2.length) {
+                differences.push({
+                  path: path.join('.'),
+                  kind: 'E',
+                  lhs: obj1,
+                  rhs: obj2,
+                  description: `Array length changed from ${obj1.length} to ${obj2.length}`
+                });
+                return differences;
+              }
+              
+              for (let i = 0; i < obj1.length; i++) {
+                const itemPath = [...path, i];
+                differences.push(...deepCompare(obj1[i], obj2[i], itemPath));
+              }
+              return differences;
+            }
+            
+            // Handle objects - compare all keys from both objects
+            const allKeys = new Set([...Object.keys(obj1), ...Object.keys(obj2)]);
+            
+            for (const key of allKeys) {
+              const keyPath = [...path, key];
+              const hasKey1 = key in obj1;
+              const hasKey2 = key in obj2;
+              
+              if (!hasKey1 && hasKey2) {
+                // Key added
+                differences.push({
+                  path: keyPath.join('.'),
+                  kind: 'N',
+                  lhs: undefined,
+                  rhs: obj2[key],
+                  description: `Property '${keyPath.join('.')}' was added`
+                });
+              } else if (hasKey1 && !hasKey2) {
+                // Key removed
+                differences.push({
+                  path: keyPath.join('.'),
+                  kind: 'D',
+                  lhs: obj1[key],
+                  rhs: undefined,
+                  description: `Property '${keyPath.join('.')}' was removed`
+                });
+              } else {
+                // Key exists in both - compare values
+                differences.push(...deepCompare(obj1[key], obj2[key], keyPath));
+              }
+            }
+            
+            return differences;
           }
 
           function normalizeJsonObject(obj) {
@@ -405,7 +496,7 @@ jobs:
           }
 
           function formatDifference(diff) {
-            const path = diff.path ? diff.path.join('.') : 'root';
+            const path = diff.path || 'root';
             const kind = diff.kind;
             
             switch (kind) {
@@ -414,14 +505,14 @@ jobs:
                   path, 
                   kind: 'added', 
                   value: diff.rhs,
-                  description: `Property '${path}' was added`
+                  description: diff.description || `Property '${path}' was added`
                 };
               case 'D': // Property deleted
                 return { 
                   path, 
                   kind: 'removed', 
                   value: diff.lhs,
-                  description: `Property '${path}' was removed`
+                  description: diff.description || `Property '${path}' was removed`
                 };
               case 'E': // Property value changed
                 return { 
@@ -429,7 +520,7 @@ jobs:
                   kind: 'modified', 
                   oldValue: diff.lhs, 
                   newValue: diff.rhs,
-                  description: `Property '${path}' was changed from '${JSON.stringify(diff.lhs)}' to '${JSON.stringify(diff.rhs)}'`
+                  description: diff.description || `Property '${path}' was changed from '${JSON.stringify(diff.lhs)}' to '${JSON.stringify(diff.rhs)}'`
                 };
               case 'A': // Array item changed
                 return {
@@ -437,14 +528,14 @@ jobs:
                   kind: 'array_change',
                   index: diff.index,
                   item: diff.item,
-                  description: `Array item at index ${diff.index} in '${path}' was ${diff.item.kind}`
+                  description: diff.description || `Array item at index ${diff.index} in '${path}' was ${diff.item.kind}`
                 };
               default:
                 return { 
                   path, 
                   kind: 'unknown', 
                   diff,
-                  description: `Unknown change type in '${path}'`
+                  description: diff.description || `Unknown change type in '${path}'`
                 };
             }
           }
@@ -457,32 +548,32 @@ jobs:
             let summary = '';
             
             if (differentFiles.length > 0) {
-              summary += `*📁 Files with Differences (${differentFiles.length}):*\n`;
+              summary += `Files with Differences (${differentFiles.length}):\n`;
               differentFiles.forEach(file => {
-                summary += `• \`${file.file}\` - ${file.differences.length} change(s)\n`;
-                // Show first 3 differences for each file
-                file.differences.slice(0, 3).forEach(diff => {
-                  summary += `  ◦ ${diff.description}\n`;
+                summary += `- ${file.file} - ${file.differences.length} change(s)\n`;
+                // Show first 2 differences for each file
+                file.differences.slice(0, 2).forEach(diff => {
+                  summary += `  * ${diff.description}\n`;
                 });
-                if (file.differences.length > 3) {
-                  summary += `  ◦ ... and ${file.differences.length - 3} more changes\n`;
+                if (file.differences.length > 2) {
+                  summary += `  * ... and ${file.differences.length - 2} more changes\n`;
                 }
               });
               summary += '\n';
             }
             
             if (identicalFiles.length > 0) {
-              summary += `*✅ Identical Files (${identicalFiles.length}):*\n`;
+              summary += `Identical Files (${identicalFiles.length}):\n`;
               identicalFiles.forEach(file => {
-                summary += `• \`${file.file}\`\n`;
+                summary += `- ${file.file}\n`;
               });
               summary += '\n';
             }
             
             if (errorFiles.length > 0) {
-              summary += `*⚠️ Files with Errors (${errorFiles.length}):*\n`;
+              summary += `Files with Errors (${errorFiles.length}):\n`;
               errorFiles.forEach(file => {
-                summary += `• \`${file.file}\` - ${file.message}\n`;
+                summary += `- ${file.file} - ${file.message}\n`;
               });
               summary += '\n';
             }
@@ -492,8 +583,12 @@ jobs:
 
           async function generateAndSaveReport(data, reportPath) {
             const html = generateComparisonReport(data);
-            const fs = require('fs');
-            fs.writeFileSync(reportPath, html);
+            try {
+              fs.writeFileSync(reportPath, html);
+            } catch (error) {
+              console.log(`Error writing report file: ${error.message}`);
+              throw error;
+            }
           }
 
           function generateComparisonReport(data) {
@@ -591,11 +686,11 @@ jobs:
           
           # Read slack summary from file
           if [ -f "slack_summary.txt" ]; then
-            echo "slack_summary<<EOF" >> $GITHUB_OUTPUT
-            cat slack_summary.txt >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            # Escape the content for GitHub Actions output
+            SLACK_SUMMARY=$(cat slack_summary.txt | sed 's/"/\\"/g' | tr '\n' ' ')
+            echo "slack_summary=$SLACK_SUMMARY" >> $GITHUB_OUTPUT
           else
-            echo "slack_summary=" >> $GITHUB_OUTPUT
+            echo "slack_summary=No summary available" >> $GITHUB_OUTPUT
           fi
 
   generate-html-report:
