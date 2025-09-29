@@ -542,40 +542,42 @@ jobs:
 
           function createSlackSummary(results) {
             const differentFiles = results.filter(r => r.status === 'different');
-            const identicalFiles = results.filter(r => r.status === 'identical');
             const errorFiles = results.filter(r => r.status === 'error');
             
             let summary = '';
             
+            // Only show files with actual issues (differences or errors)
             if (differentFiles.length > 0) {
-              summary += `Files with Differences (${differentFiles.length}):\n`;
-              differentFiles.forEach(file => {
-                summary += `- ${file.file} - ${file.differences.length} change(s)\n`;
-                // Show first 2 differences for each file
-                file.differences.slice(0, 2).forEach(diff => {
-                  summary += `  * ${diff.description}\n`;
+              summary += `🚨 *Files with Changes (${differentFiles.length}):*\n\n`;
+              differentFiles.forEach((file, index) => {
+                summary += `*${index + 1}. ${file.file}*\n`;
+                summary += `   Found ${file.differences.length} change(s):\n`;
+                
+                // Show first 3 differences in a readable format
+                file.differences.slice(0, 3).forEach(diff => {
+                  const icon = diff.kind === 'added' ? '➕' : diff.kind === 'removed' ? '➖' : '🔄';
+                  summary += `   ${icon} ${diff.description}\n`;
                 });
-                if (file.differences.length > 2) {
-                  summary += `  * ... and ${file.differences.length - 2} more changes\n`;
+                
+                if (file.differences.length > 3) {
+                  summary += `   ... and ${file.differences.length - 3} more changes\n`;
                 }
+                summary += '\n';
               });
-              summary += '\n';
-            }
-            
-            if (identicalFiles.length > 0) {
-              summary += `Identical Files (${identicalFiles.length}):\n`;
-              identicalFiles.forEach(file => {
-                summary += `- ${file.file}\n`;
-              });
-              summary += '\n';
             }
             
             if (errorFiles.length > 0) {
-              summary += `Files with Errors (${errorFiles.length}):\n`;
-              errorFiles.forEach(file => {
-                summary += `- ${file.file} - ${file.message}\n`;
+              summary += `⚠️ *Files with Problems (${errorFiles.length}):*\n\n`;
+              errorFiles.forEach((file, index) => {
+                summary += `*${index + 1}. ${file.file}*\n`;
+                summary += `   ❌ ${file.message}\n\n`;
               });
-              summary += '\n';
+            }
+            
+            // If no issues, show success message
+            if (differentFiles.length === 0 && errorFiles.length === 0) {
+              summary += `✅ *All files are up to date!*\n`;
+              summary += `No changes found in any configuration files.\n\n`;
             }
             
             return summary.trim();
@@ -761,21 +763,17 @@ jobs:
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
           slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
           slack-text: |
-            :white_check_mark: *JSON Comparison Summary*
-            *Comparison Status:* COMPLETED
-            *Folder Path:* `${{ needs.log-inputs.outputs.folder_path }}`
-            *Base URL:* `${{ needs.log-inputs.outputs.base_url }}`
-            *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
-            *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
+            🔍 *Configuration Check Complete*
+            
+            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
+            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
+            ⏰ *Checked at:* `${{ needs.run-comparison.outputs.startedAt }}`
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            *Report:* <https://github.com/${{ github.repository }}/blob/main/reports/|Click here to view the full report>
-            *Report Link:* https://github.com/${{ github.repository }}/blob/main/reports/
-            _For Developers_
-            *Repository:* ${{ github.repository }}
-            *Commit:* <https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>
-            If you have questions, reply in this channel or contact the JSON Comparison team.
+            📊 *Full Report:* <https://github.com/${{ github.repository }}/blob/main/reports/|View detailed report>
+            
+            _Need help? Reply in this channel or contact the team._
 
       - name: 🔔 Slack Alert
         if: ${{ failure() }}
@@ -784,16 +782,14 @@ jobs:
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
           slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
           slack-text: |
-            :x: *JSON Comparison Summary*
-            *Comparison Status:* FAILED
-            *Folder Path:* `${{ needs.log-inputs.outputs.folder_path }}`
-            *Base URL:* `${{ needs.log-inputs.outputs.base_url }}`
-            *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
-            *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
-            *Job ID:* `${{ github.run_id }}`
+            ❌ *Configuration Check Failed*
+            
+            📁 *What was being checked:* `${{ needs.log-inputs.outputs.folder_path }}`
+            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
+            ⏰ *Failed at:* `${{ needs.run-comparison.outputs.startedAt }}`
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            *Report:* <https://github.com/${{ github.repository }}/blob/main/reports/|Click here to view the full report>
-            *Report Link:* https://github.com/${{ github.repository }}/blob/main/reports/
-            Please check the report or contact the JSON Comparison team for details.
+            📊 *Full Report:* <https://github.com/${{ github.repository }}/blob/main/reports/|View detailed report>
+            
+            _Please check the report or contact the team for help._
