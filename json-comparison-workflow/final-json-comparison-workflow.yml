@@ -79,6 +79,7 @@ jobs:
       completedAt: ${{ steps.run_comparison.outputs.completedAt }}
       has_differences: ${{ steps.run_comparison.outputs.has_differences }}
       report_path: ${{ steps.run_comparison.outputs.report_path }}
+      slack_summary: ${{ steps.run_comparison.outputs.slack_summary }}
     steps:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
@@ -240,6 +241,10 @@ jobs:
               // Create summary for Slack
               const summary = createSlackSummary(results);
               console.log(`slack_summary=${summary}` >> process.env.GITHUB_OUTPUT);
+              
+              // Also write to file for GitHub Actions to read
+              const fs = require('fs');
+              fs.writeFileSync('slack_summary.txt', summary);
 
             } catch (error) {
               console.log(`❌ Action failed: ${error.message}`);
@@ -583,6 +588,15 @@ jobs:
           node compare-json.js
           
           echo "completedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          
+          # Read slack summary from file
+          if [ -f "slack_summary.txt" ]; then
+            echo "slack_summary<<EOF" >> $GITHUB_OUTPUT
+            cat slack_summary.txt >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "slack_summary=" >> $GITHUB_OUTPUT
+          fi
 
   generate-html-report:
     needs: [log-inputs, run-comparison]
@@ -675,7 +689,7 @@ jobs:
             *Comparison Mode:* `${{ needs.log-inputs.outputs.comparison_mode }}`
             *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
             
-            ${{ needs.run-comparison.outputs.slack_summary }}
+            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
             *Report:* <https://github.aexp.com/pages/amex-eng/json-validator/reports/|Click here to view the full report>
             *Report Link:* https://github.aexp.com/pages/amex-eng/json-validator/reports/
@@ -699,7 +713,7 @@ jobs:
             *Date & Time:* `${{ needs.run-comparison.outputs.startedAt }}`
             *Job ID:* `${{ github.run_id }}`
             
-            ${{ needs.run-comparison.outputs.slack_summary }}
+            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
             *Report:* <https://github.aexp.com/pages/amex-eng/json-validator/reports/|Click here to view the full report>
             *Report Link:* https://github.aexp.com/pages/amex-eng/json-validator/reports/
