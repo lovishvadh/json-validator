@@ -548,17 +548,21 @@ jobs:
             
             // Only show files with actual issues (differences or errors)
             if (differentFiles.length > 0) {
-              summary += `🚨 *Files with Changes (${differentFiles.length}):*`;
+              summary += `🚨 Files with Changes (${differentFiles.length}):`;
               summary += `\n`;
               
               differentFiles.forEach((file, index) => {
-                summary += `\n*${index + 1}. ${file.file}*`;
+                // Escape special characters in file names
+                const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
+                summary += `\n${index + 1}. ${safeFileName}`;
                 summary += `\nFound ${file.differences.length} change(s):`;
                 
                 // Show first 3 differences with proper formatting
                 file.differences.slice(0, 3).forEach((diff, diffIndex) => {
                   const icon = diff.kind === 'added' ? '➕' : diff.kind === 'removed' ? '➖' : '🔄';
-                  summary += `\n${diffIndex + 1}. ${icon} ${diff.description}`;
+                  // Escape special characters in descriptions
+                  const safeDescription = diff.description.replace(/[*_`]/g, '\\$&');
+                  summary += `\n${diffIndex + 1}. ${icon} ${safeDescription}`;
                 });
                 
                 if (file.differences.length > 3) {
@@ -568,17 +572,19 @@ jobs:
             }
             
             if (errorFiles.length > 0) {
-              summary += `\n\n⚠️ *Files with Problems (${errorFiles.length}):*`;
+              summary += `\n\n⚠️ Files with Problems (${errorFiles.length}):`;
               
               errorFiles.forEach((file, index) => {
-                summary += `\n\n*${index + 1}. ${file.file}*`;
+                // Escape special characters in file names
+                const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
+                summary += `\n\n${index + 1}. ${safeFileName}`;
                 summary += `\n❌ ${file.message}`;
               });
             }
             
             // If no issues, show success message
             if (differentFiles.length === 0 && errorFiles.length === 0) {
-              summary += `\n✅ *All files are up to date!*`;
+              summary += `\n✅ All files are up to date!`;
               summary += `\nNo changes found in any configuration files.`;
             }
             
@@ -690,9 +696,11 @@ jobs:
           
           # Read slack summary from file
           if [ -f "slack_summary.txt" ]; then
-            # Keep it simple - just read the content
-            SLACK_SUMMARY=$(cat slack_summary.txt)
-            echo "slack_summary=$SLACK_SUMMARY" >> $GITHUB_OUTPUT
+            # Escape special characters for GitHub Actions output
+            SLACK_SUMMARY=$(cat slack_summary.txt | sed 's/"/\\"/g' | sed 's/\*/\\*/g' | sed 's/\[/\\[/g' | sed 's/\]/\\]/g' | sed 's/</\\</g' | sed 's/>/\\>/g' | sed 's/&/\\&/g')
+            echo "slack_summary<<EOF" >> $GITHUB_OUTPUT
+            echo "$SLACK_SUMMARY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
           else
             echo "slack_summary=No summary available" >> $GITHUB_OUTPUT
           fi
