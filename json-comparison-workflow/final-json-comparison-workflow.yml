@@ -170,9 +170,10 @@ jobs:
                   }
                   
                   // Compare JSON files
+                  const ignoreKeysArray = ignoreKeys ? ignoreKeys.split(',').map(key => key.trim()).filter(key => key) : [];
                   const comparisonResult = compareJsonFiles(localJson, remoteJson, {
                     mode: comparisonMode,
-                    ignoreKeys: ignoreKeys.split(',').map(key => key.trim()).filter(key => key)
+                    ignoreKeys: ignoreKeysArray
                   });
                   
                   if (comparisonResult.identical) {

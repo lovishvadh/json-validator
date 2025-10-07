@@ -312,9 +312,12 @@ jobs:
           function deepCompare(obj1, obj2, ignoreKeys = [], path = '') {
             const differences = [];
             
+            // Ensure ignoreKeys is always an array
+            const ignoreKeysArray = Array.isArray(ignoreKeys) ? ignoreKeys : (ignoreKeys ? ignoreKeys.split(',').map(k => k.trim()) : []);
+            
             // Helper function to check if a key should be ignored
             function shouldIgnoreKey(keyPath) {
-              return ignoreKeys.some(ignoreKey => {
+              return ignoreKeysArray.some(ignoreKey => {
                 if (ignoreKey.includes('*')) {
                   const pattern = ignoreKey.replace(/\*/g, '.*');
                   return new RegExp(`^${pattern}$`).test(keyPath);
