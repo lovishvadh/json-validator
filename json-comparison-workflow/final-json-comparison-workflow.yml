@@ -125,6 +125,9 @@ jobs:
               console.log(`🔍 Scanning folder: ${folderPath}`);
               console.log(`🌐 Base URL: ${baseUrl}`);
               console.log(`⚙️ Comparison mode: ${comparisonMode}`);
+              console.log(`🚫 Ignore keys: ${ignoreKeys || 'none'}`);
+              console.log(`📁 File extensions: ${fileExtensions}`);
+              console.log(`🔄 Recursive: ${recursive}`);
 
               // Find all JSON files in the folder
               const jsonFiles = await findJsonFilesInFolder(folderPath, fileExtensions.split(','), recursive);
