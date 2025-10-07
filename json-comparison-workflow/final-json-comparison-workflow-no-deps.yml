@@ -1,0 +1,693 @@
+name: JSON Comparison Workflow (No External Dependencies)
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder_path:
+        description: 'Folder path to scan for JSON files'
+        required: false
+        default: 'config'
+      base_url:
+        description: 'Base URL for remote JSON files (e.g., https://api.example.com/config)'
+        required: true
+        default: 'https://api.example.com/config'
+      slack_channel:
+        description: 'Slack channel to send notifications to'
+        required: true
+        default: '#json-comparison'
+      comparison_mode:
+        description: 'Comparison mode (strict|lenient)'
+        required: false
+        default: 'strict'
+      ignore_keys:
+        description: 'Comma-separated list of keys to ignore during comparison'
+        required: false
+        default: ''
+      file_extensions:
+        description: 'Comma-separated list of file extensions to include'
+        required: false
+        default: 'json'
+      recursive:
+        description: 'Whether to scan subdirectories recursively'
+        required: false
+        default: 'false'
+  schedule:
+    - cron: '0 9 * * 1-5'  # Run at 9 AM UTC, Monday to Friday
+
+jobs:
+  log-inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      folder_path: ${{ steps.log-inputs.outputs.folder_path }}
+      base_url: ${{ steps.log-inputs.outputs.base_url }}
+      slack_channel: ${{ steps.log-inputs.outputs.slack_channel }}
+      comparison_mode: ${{ steps.log-inputs.outputs.comparison_mode }}
+      ignore_keys: ${{ steps.log-inputs.outputs.ignore_keys }}
+      file_extensions: ${{ steps.log-inputs.outputs.file_extensions }}
+      recursive: ${{ steps.log-inputs.outputs.recursive }}
+    steps:
+      - name: 📝 Log Inputs
+        id: log-inputs
+        run: |
+          echo "=== JSON Comparison Workflow Inputs ==="
+          echo "Folder Path: ${{ github.event.inputs.folder_path || 'config' }}"
+          echo "Base URL: ${{ github.event.inputs.base_url || 'https://api.example.com/config' }}"
+          echo "Slack Channel: ${{ github.event.inputs.slack_channel || '#json-comparison' }}"
+          echo "Comparison Mode: ${{ github.event.inputs.comparison_mode || 'strict' }}"
+          echo "Ignore Keys: ${{ github.event.inputs.ignore_keys || '' }}"
+          echo "File Extensions: ${{ github.event.inputs.file_extensions || 'json' }}"
+          echo "Recursive: ${{ github.event.inputs.recursive || 'false' }}"
+          echo "=========================================="
+          
+          echo "folder_path=${{ github.event.inputs.folder_path || 'config' }}" >> $GITHUB_OUTPUT
+          echo "base_url=${{ github.event.inputs.base_url || 'https://api.example.com/config' }}" >> $GITHUB_OUTPUT
+          echo "slack_channel=${{ github.event.inputs.slack_channel || '#json-comparison' }}" >> $GITHUB_OUTPUT
+          echo "comparison_mode=${{ github.event.inputs.comparison_mode || 'strict' }}" >> $GITHUB_OUTPUT
+          echo "ignore_keys=${{ github.event.inputs.ignore_keys || '' }}" >> $GITHUB_OUTPUT
+          echo "file_extensions=${{ github.event.inputs.file_extensions || 'json' }}" >> $GITHUB_OUTPUT
+          echo "recursive=${{ github.event.inputs.recursive || 'false' }}" >> $GITHUB_OUTPUT
+
+  run-comparison:
+    needs: [log-inputs]
+    runs-on: ubuntu-latest
+    outputs:
+      startedAt: ${{ steps.run_comparison.outputs.startedAt }}
+      completedAt: ${{ steps.run_comparison.outputs.completedAt }}
+      has_differences: ${{ steps.run_comparison.outputs.has_differences }}
+      report_path: ${{ steps.run_comparison.outputs.report_path }}
+      slack_summary: ${{ steps.run_comparison.outputs.slack_summary }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 🔍 Run JSON Comparison
+        id: run_comparison
+        run: |
+          echo "Starting JSON comparison at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "startedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          
+          # Create the comparison script using only standard Node.js modules
+          cat > compare-json.js << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const https = require('https');
+          const http = require('http');
+
+          async function run() {
+            try {
+              // Get inputs from environment variables
+              const folderPath = process.env.FOLDER_PATH || 'config';
+              const baseUrl = process.env.BASE_URL || 'https://api.example.com/config';
+              const comparisonMode = process.env.COMPARISON_MODE || 'strict';
+              const ignoreKeys = process.env.IGNORE_KEYS ? process.env.IGNORE_KEYS.split(',').map(k => k.trim()) : [];
+              const fileExtensions = process.env.FILE_EXTENSIONS ? process.env.FILE_EXTENSIONS.split(',').map(e => e.trim()) : ['json'];
+              const recursive = process.env.RECURSIVE === 'true';
+
+              console.log(`🔍 Scanning folder: ${folderPath}`);
+              console.log(`🌐 Base URL: ${baseUrl}`);
+              console.log(`📊 Comparison mode: ${comparisonMode}`);
+              console.log(`🚫 Ignore keys: ${ignoreKeys.join(', ') || 'none'}`);
+              console.log(`📁 File extensions: ${fileExtensions.join(', ')}`);
+              console.log(`🔄 Recursive: ${recursive}`);
+
+              // Find JSON files in the specified folder
+              const jsonFiles = findJsonFilesInFolder(folderPath, fileExtensions, recursive);
+              console.log(`📄 Found ${jsonFiles.length} JSON files to compare`);
+
+              if (jsonFiles.length === 0) {
+                console.log('⚠️ No JSON files found in the specified folder');
+                console.log('has_differences=false' >> process.env.GITHUB_OUTPUT);
+                console.log('slack_summary=No JSON files found to compare' >> process.env.GITHUB_OUTPUT);
+                return;
+              }
+
+              // Compare each file
+              const results = [];
+              let hasDifferences = false;
+              let reportPath = null;
+
+              for (const filePath of jsonFiles) {
+                console.log(`\n🔍 Comparing: ${filePath}`);
+                
+                try {
+                  const result = await compareJsonFile(filePath, baseUrl, comparisonMode, ignoreKeys);
+                  results.push(result);
+                  
+                  if (result.status === 'different') {
+                    hasDifferences = true;
+                    console.log(`❌ Differences found in ${filePath}`);
+                  } else if (result.status === 'error') {
+                    console.log(`⚠️ Error processing ${filePath}: ${result.message}`);
+                  } else {
+                    console.log(`✅ ${filePath} is identical`);
+                  }
+                } catch (error) {
+                  console.log(`❌ Failed to process ${filePath}: ${error.message}`);
+                  results.push({
+                    file: filePath,
+                    status: 'error',
+                    message: error.message
+                  });
+                }
+              }
+
+              // Generate HTML report if there are differences
+              if (hasDifferences || results.some(r => r.status === 'error')) {
+                reportPath = await generateHtmlReport(results, folderPath, baseUrl);
+                console.log(`📊 HTML report generated: ${reportPath}`);
+              }
+
+              // Set outputs
+              console.log(`has_differences=${hasDifferences}` >> process.env.GITHUB_OUTPUT);
+              if (reportPath) {
+                console.log(`report_path=${reportPath}` >> process.env.GITHUB_OUTPUT);
+              }
+              
+              // Create summary for Slack
+              const summary = createSlackSummary(results);
+              console.log(`slack_summary=${summary}` >> process.env.GITHUB_OUTPUT);
+              
+              // Also write to file for GitHub Actions to read
+              try {
+                fs.writeFileSync('slack_summary.txt', summary);
+              } catch (error) {
+                console.log(`Warning: Could not write slack summary file: ${error.message}`);
+              }
+
+            } catch (error) {
+              console.log(`❌ Action failed: ${error.message}`);
+              console.log(`Error details: ${error.stack}`);
+              process.exit(1);
+            }
+          }
+
+          function findJsonFilesInFolder(folderPath, extensions, recursive) {
+            const files = [];
+            
+            function scanDirectory(dir) {
+              try {
+                const items = fs.readdirSync(dir);
+                
+                for (const item of items) {
+                  const fullPath = path.join(dir, item);
+                  const stat = fs.statSync(fullPath);
+                  
+                  if (stat.isDirectory() && recursive) {
+                    scanDirectory(fullPath);
+                  } else if (stat.isFile()) {
+                    const ext = path.extname(item).toLowerCase().substring(1);
+                    if (extensions.includes(ext)) {
+                      files.push(fullPath);
+                    }
+                  }
+                }
+              } catch (error) {
+                console.log(`Warning: Could not scan directory ${dir}: ${error.message}`);
+              }
+            }
+            
+            scanDirectory(folderPath);
+            return files;
+          }
+
+          async function compareJsonFile(filePath, baseUrl, comparisonMode, ignoreKeys) {
+            try {
+              // Read local file
+              const localContent = fs.readFileSync(filePath, 'utf8');
+              const localJson = JSON.parse(localContent);
+              
+              // Construct remote URL
+              const relativePath = path.relative(process.cwd(), filePath);
+              const remoteUrl = `${baseUrl}/${relativePath}`;
+              
+              console.log(`🌐 Fetching: ${remoteUrl}`);
+              
+              // Fetch remote file
+              const remoteJson = await fetchJsonFromUrl(remoteUrl);
+              
+              if (!remoteJson) {
+                return {
+                  file: relativePath,
+                  status: 'error',
+                  message: 'Remote file not found or could not be fetched'
+                };
+              }
+              
+              // Compare JSON objects
+              const differences = deepCompare(localJson, remoteJson, ignoreKeys);
+              
+              if (differences.length === 0) {
+                return {
+                  file: relativePath,
+                  status: 'identical',
+                  differences: []
+                };
+              } else {
+                return {
+                  file: relativePath,
+                  status: 'different',
+                  differences: differences
+                };
+              }
+              
+            } catch (error) {
+              return {
+                file: filePath,
+                status: 'error',
+                message: error.message
+              };
+            }
+          }
+
+          async function fetchJsonFromUrl(url) {
+            return new Promise((resolve, reject) => {
+              const client = url.startsWith('https:') ? https : http;
+              
+              const request = client.get(url, (response) => {
+                let data = '';
+                
+                response.on('data', (chunk) => {
+                  data += chunk;
+                });
+                
+                response.on('end', () => {
+                  try {
+                    if (response.statusCode === 200) {
+                      const json = JSON.parse(data);
+                      resolve(json);
+                    } else if (response.statusCode === 404) {
+                      console.log(`⚠️ Remote file not found: ${url}`);
+                      resolve(null);
+                    } else {
+                      console.log(`⚠️ HTTP ${response.statusCode} for ${url}`);
+                      resolve(null);
+                    }
+                  } catch (error) {
+                    console.log(`⚠️ Invalid JSON from ${url}: ${error.message}`);
+                    resolve(null);
+                  }
+                });
+              });
+              
+              request.on('error', (error) => {
+                console.log(`⚠️ Network error for ${url}: ${error.message}`);
+                resolve(null);
+              });
+              
+              request.setTimeout(10000, () => {
+                console.log(`⚠️ Timeout for ${url}`);
+                request.destroy();
+                resolve(null);
+              });
+            });
+          }
+
+          function deepCompare(obj1, obj2, ignoreKeys = [], path = '') {
+            const differences = [];
+            
+            // Helper function to check if a key should be ignored
+            function shouldIgnoreKey(keyPath) {
+              return ignoreKeys.some(ignoreKey => {
+                if (ignoreKey.includes('*')) {
+                  const pattern = ignoreKey.replace(/\*/g, '.*');
+                  return new RegExp(`^${pattern}$`).test(keyPath);
+                }
+                return keyPath === ignoreKey || keyPath.endsWith('.' + ignoreKey);
+              });
+            }
+            
+            // Compare objects
+            if (typeof obj1 === 'object' && obj1 !== null && typeof obj2 === 'object' && obj2 !== null) {
+              const allKeys = new Set([...Object.keys(obj1), ...Object.keys(obj2)]);
+              
+              for (const key of allKeys) {
+                const currentPath = path ? `${path}.${key}` : key;
+                
+                if (shouldIgnoreKey(currentPath)) {
+                  continue;
+                }
+                
+                if (!(key in obj1)) {
+                  differences.push({
+                    kind: 'added',
+                    path: currentPath,
+                    description: `Property '${currentPath}' was added with value '${JSON.stringify(obj2[key])}'`
+                  });
+                } else if (!(key in obj2)) {
+                  differences.push({
+                    kind: 'removed',
+                    path: currentPath,
+                    description: `Property '${currentPath}' was removed (was: '${JSON.stringify(obj1[key])}')`
+                  });
+                } else {
+                  const subDifferences = deepCompare(obj1[key], obj2[key], ignoreKeys, currentPath);
+                  differences.push(...subDifferences);
+                }
+              }
+            } else if (obj1 !== obj2) {
+              differences.push({
+                kind: 'modified',
+                path: path,
+                description: `Property '${path}' was changed from '${JSON.stringify(obj1)}' to '${JSON.stringify(obj2)}'`
+              });
+            }
+            
+            return differences;
+          }
+
+          function createSlackSummary(results) {
+            const differentFiles = results.filter(r => r.status === 'different');
+            const errorFiles = results.filter(r => r.status === 'error');
+            
+            let summary = '';
+            
+            // Only show files with actual issues (differences or errors)
+            if (differentFiles.length > 0) {
+              summary += `🚨 Files with Changes (${differentFiles.length}):`;
+              
+              differentFiles.forEach((file, index) => {
+                // Add line break before each file and make file names bold
+                const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
+                summary += `\n\n${index + 1}. *${safeFileName}*`;
+                summary += `\nFound ${file.differences.length} change(s):`;
+                
+                // Show first 3 differences with proper formatting
+                file.differences.slice(0, 3).forEach((diff, diffIndex) => {
+                  const icon = diff.kind === 'added' ? '➕' : diff.kind === 'removed' ? '➖' : '🔄';
+                  // Escape special characters and truncate long descriptions
+                  let safeDescription = diff.description.replace(/[*_`]/g, '\\$&');
+                  if (safeDescription.length > 100) {
+                    safeDescription = safeDescription.substring(0, 97) + '...';
+                  }
+                  summary += `\n${diffIndex + 1}. ${icon} ${safeDescription}`;
+                });
+                
+                if (file.differences.length > 3) {
+                  summary += `\n... and ${file.differences.length - 3} more changes`;
+                }
+              });
+            }
+            
+            if (errorFiles.length > 0) {
+              summary += `\n\n⚠️ Files with Problems (${errorFiles.length}):`;
+              
+              errorFiles.forEach((file, index) => {
+                // Add line break before each file and make file names bold
+                const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
+                summary += `\n\n${index + 1}. *${safeFileName}*`;
+                summary += `\n❌ ${file.message}`;
+              });
+            }
+            
+            // If no issues, show success message
+            if (differentFiles.length === 0 && errorFiles.length === 0) {
+              summary += `\n\n✅ All files are up to date!`;
+              summary += `\nNo changes found in any configuration files.`;
+            }
+            
+            return summary.trim();
+          }
+
+          async function generateHtmlReport(results, folderPath, baseUrl) {
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const reportPath = `reports/json-comparison-report-${timestamp}.html`;
+            
+            // Create reports directory if it doesn't exist
+            const reportsDir = 'reports';
+            if (!fs.existsSync(reportsDir)) {
+              fs.mkdirSync(reportsDir, { recursive: true });
+            }
+            
+            const html = generateComparisonReport(results, folderPath, baseUrl);
+            fs.writeFileSync(reportPath, html);
+            
+            return reportPath;
+          }
+
+          function generateComparisonReport(results, folderPath, baseUrl) {
+            const timestamp = new Date().toISOString();
+            const differentFiles = results.filter(r => r.status === 'different');
+            const errorFiles = results.filter(r => r.status === 'error');
+            const identicalFiles = results.filter(r => r.status === 'identical');
+            
+            return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JSON Comparison Report</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+        .summary { padding: 20px; border-bottom: 1px solid #eee; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
+        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 6px; text-align: center; }
+        .summary-card h3 { margin: 0 0 5px 0; color: #2c3e50; }
+        .summary-card .number { font-size: 24px; font-weight: bold; }
+        .different { color: #e74c3c; }
+        .identical { color: #27ae60; }
+        .error { color: #f39c12; }
+        .content { padding: 20px; }
+        .file-section { margin-bottom: 30px; }
+        .file-header { background: #ecf0f1; padding: 15px; border-radius: 6px; margin-bottom: 15px; }
+        .file-name { font-weight: bold; color: #2c3e50; }
+        .file-status { margin-left: 10px; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .status-different { background: #e74c3c; color: white; }
+        .status-identical { background: #27ae60; color: white; }
+        .status-error { background: #f39c12; color: white; }
+        .differences { margin-top: 15px; }
+        .difference { background: #f8f9fa; padding: 10px; margin: 5px 0; border-left: 4px solid #3498db; border-radius: 0 4px 4px 0; }
+        .difference-kind { font-weight: bold; margin-bottom: 5px; }
+        .added { border-left-color: #27ae60; }
+        .removed { border-left-color: #e74c3c; }
+        .modified { border-left-color: #f39c12; }
+        .no-changes { text-align: center; color: #7f8c8d; padding: 40px; }
+        .timestamp { color: #7f8c8d; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 JSON Comparison Report</h1>
+            <p class="timestamp">Generated: ${timestamp}</p>
+        </div>
+        
+        <div class="summary">
+            <h2>📊 Summary</h2>
+            <div class="summary-grid">
+                <div class="summary-card">
+                    <h3>Total Files</h3>
+                    <div class="number">${results.length}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Different</h3>
+                    <div class="number different">${differentFiles.length}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Identical</h3>
+                    <div class="number identical">${identicalFiles.length}</div>
+                </div>
+                <div class="summary-card">
+                    <h3>Errors</h3>
+                    <div class="number error">${errorFiles.length}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="content">
+            ${differentFiles.length > 0 ? `
+            <div class="file-section">
+                <h2>🚨 Files with Changes (${differentFiles.length})</h2>
+                ${differentFiles.map(file => `
+                <div class="file-header">
+                    <span class="file-name">${file.file}</span>
+                    <span class="file-status status-different">DIFFERENT</span>
+                </div>
+                <div class="differences">
+                    ${file.differences.map(diff => `
+                    <div class="difference ${diff.kind}">
+                        <div class="difference-kind">${diff.kind.toUpperCase()}</div>
+                        <div>${diff.description}</div>
+                    </div>
+                    `).join('')}
+                </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${errorFiles.length > 0 ? `
+            <div class="file-section">
+                <h2>⚠️ Files with Errors (${errorFiles.length})</h2>
+                ${errorFiles.map(file => `
+                <div class="file-header">
+                    <span class="file-name">${file.file}</span>
+                    <span class="file-status status-error">ERROR</span>
+                </div>
+                <div class="differences">
+                    <div class="difference">
+                        <div class="difference-kind">ERROR</div>
+                        <div>${file.message}</div>
+                    </div>
+                </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${identicalFiles.length > 0 ? `
+            <div class="file-section">
+                <h2>✅ Identical Files (${identicalFiles.length})</h2>
+                ${identicalFiles.map(file => `
+                <div class="file-header">
+                    <span class="file-name">${file.file}</span>
+                    <span class="file-status status-identical">IDENTICAL</span>
+                </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${results.length === 0 ? `
+            <div class="no-changes">
+                <h2>📁 No Files Found</h2>
+                <p>No JSON files were found in the specified folder.</p>
+            </div>
+            ` : ''}
+        </div>
+    </div>
+</body>
+</html>`;
+          }
+
+          // Run the comparison
+          run();
+          EOF
+
+          # Set environment variables for the script
+          export FOLDER_PATH="${{ needs.log-inputs.outputs.folder_path }}"
+          export BASE_URL="${{ needs.log-inputs.outputs.base_url }}"
+          export COMPARISON_MODE="${{ needs.log-inputs.outputs.comparison_mode }}"
+          export IGNORE_KEYS="${{ needs.log-inputs.outputs.ignore_keys }}"
+          export FILE_EXTENSIONS="${{ needs.log-inputs.outputs.file_extensions }}"
+          export RECURSIVE="${{ needs.log-inputs.outputs.recursive }}"
+
+          # Run the comparison
+          node compare-json.js
+          
+          echo "completedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          
+          # Read slack summary from file
+          if [ -f "slack_summary.txt" ]; then
+            # Escape special characters for GitHub Actions output
+            SLACK_SUMMARY=$(cat slack_summary.txt | sed 's/"/\\"/g' | sed 's/\*/\\*/g' | sed 's/\[/\\[/g' | sed 's/\]/\\]/g' | sed 's/</\\</g' | sed 's/>/\\>/g' | sed 's/&/\\&/g')
+            echo "slack_summary<<EOF" >> $GITHUB_OUTPUT
+            echo "$SLACK_SUMMARY" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "slack_summary=No summary available" >> $GITHUB_OUTPUT
+          fi
+
+  generate-html-report:
+    needs: [log-inputs, run-comparison]
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - name: 📊 Generate HTML Report
+        if: ${{ success() }}
+        id: generate_html_report
+        run: |
+          echo "Generating HTML report for JSON comparison results..."
+          # The report is automatically generated by the comparison action
+          echo "Report generated in reports/ directory"
+          echo "see report here: https://github.aexp.com/pages/amex-eng/json-validator/reports/" >> $GITHUB_STEP_SUMMARY
+        continue-on-error: true
+
+  deploy-reports:
+    needs: [log-inputs, run-comparison, generate-html-report]
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📊 Copy Reports to Repository
+        run: |
+          # Create reports directory if it doesn't exist
+          mkdir -p reports
+          
+          # Copy the generated report to the repository
+          if [ -f "reports/json-comparison-report-*.html" ]; then
+            cp reports/json-comparison-report-*.html reports/
+            echo "Report copied to repository"
+          else
+            echo "No report file found to copy"
+          fi
+
+      - name: 📝 Commit and Push Reports
+        run: |
+          # Configure git
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Add and commit the report
+          if [ -n "$(git status --porcelain)" ]; then
+            git add reports/
+            git commit -m "Add JSON comparison report - ${{ github.run_number }}"
+            git push origin main
+            echo "Report committed and pushed to main branch"
+          fi
+
+  slack-notification:
+    needs: [log-inputs, run-comparison, generate-html-report, deploy-reports]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: 🔔 Slack Alert
+        if: ${{ success() }}
+        uses: amex-eng/github-actions-slack@v1.1.0
+        id: notify
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
+          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
+          slack-text: |
+            🔍 *Configuration Check Complete*
+            
+            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
+            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
+            ⏰ *Checked at:* `${{ needs.run-comparison.outputs.startedAt }}`
+            
+            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
+            
+            📊 *Detailed report attached below*
+            
+            _Need help? Reply in this channel or contact the team._
+          file-path: ${{ needs.run-comparison.outputs.report_path }}
+
+      - name: 🔔 Slack Alert
+        if: ${{ failure() }}
+        uses: amex-eng/github-actions-slack@v1.1.0
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
+          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
+          slack-text: |
+            ❌ *Configuration Check Failed*
+            
+            📁 *What was being checked:* `${{ needs.log-inputs.outputs.folder_path }}`
+            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
+            ⏰ *Failed at:* `${{ needs.run-comparison.outputs.startedAt }}`
+            
+            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
+            
+            📊 *Detailed report attached below*
+            
+            _Please check the report or contact the team for help._
+          file-path: ${{ needs.run-comparison.outputs.report_path }}

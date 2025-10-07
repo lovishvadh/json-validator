@@ -93,7 +93,7 @@ jobs:
 
       - name: 📦 Install Dependencies
         run: |
-          npm install @actions/core @actions/github @actions/exec @slack/web-api deep-diff
+          npm install @actions/github @actions/exec @slack/web-api deep-diff
 
       - name: 🔍 Run JSON Comparison
         id: run_comparison
@@ -103,7 +103,6 @@ jobs:
           
           # Create the comparison script
           cat > compare-json.js << 'EOF'
-          const core = require('@actions/core');
           const github = require('@actions/github');
           const { exec } = require('@actions/exec');
           const { WebClient } = require('@slack/web-api');
@@ -252,6 +251,7 @@ jobs:
 
             } catch (error) {
               console.log(`❌ Action failed: ${error.message}`);
+              console.log(`Error details: ${error.stack}`);
               process.exit(1);
             }
           }
