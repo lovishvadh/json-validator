@@ -549,12 +549,11 @@ jobs:
             // Only show files with actual issues (differences or errors)
             if (differentFiles.length > 0) {
               summary += `🚨 Files with Changes (${differentFiles.length}):`;
-              summary += `\n`;
               
               differentFiles.forEach((file, index) => {
-                // Escape special characters in file names and make them bold
+                // Add line break before each file and make file names bold
                 const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
-                summary += `\n${index + 1}. *${safeFileName}*`;
+                summary += `\n\n${index + 1}. *${safeFileName}*`;
                 summary += `\nFound ${file.differences.length} change(s):`;
                 
                 // Show first 3 differences with proper formatting
@@ -578,7 +577,7 @@ jobs:
               summary += `\n\n⚠️ Files with Problems (${errorFiles.length}):`;
               
               errorFiles.forEach((file, index) => {
-                // Escape special characters in file names and make them bold
+                // Add line break before each file and make file names bold
                 const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
                 summary += `\n\n${index + 1}. *${safeFileName}*`;
                 summary += `\n❌ ${file.message}`;
@@ -587,7 +586,7 @@ jobs:
             
             // If no issues, show success message
             if (differentFiles.length === 0 && errorFiles.length === 0) {
-              summary += `\n✅ All files are up to date!`;
+              summary += `\n\n✅ All files are up to date!`;
               summary += `\nNo changes found in any configuration files.`;
             }
             
@@ -784,9 +783,10 @@ jobs:
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            📊 *Full Report:* <https://github.com/${{ github.repository }}/blob/main/reports/|View detailed report>
+            📊 *Detailed report attached below*
             
             _Need help? Reply in this channel or contact the team._
+          file-path: ${{ needs.run-comparison.outputs.report_path }}
 
       - name: 🔔 Slack Alert
         if: ${{ failure() }}
@@ -803,6 +803,7 @@ jobs:
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            📊 *Full Report:* <https://github.com/${{ github.repository }}/blob/main/reports/|View detailed report>
+            📊 *Detailed report attached below*
             
             _Please check the report or contact the team for help._
+          file-path: ${{ needs.run-comparison.outputs.report_path }}
