@@ -445,6 +445,59 @@ jobs:
             return reportPath;
           }
 
+          function generateHtmlReport(results, differentFiles, errorFiles, identicalFiles, ignoredFiles, timestamp) {
+            const header = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>JSON Comparison Report</title>';
+            const styles = '<style>body{font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;margin:0;padding:20px;background:#f5f5f5}.container{max-width:1200px;margin:0 auto;background:white;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}.header{background:#2c3e50;color:white;padding:20px;border-radius:8px 8px 0 0}.summary{padding:20px;border-bottom:1px solid #eee}.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin-top:15px}.summary-card{background:#f8f9fa;padding:15px;border-radius:6px;text-align:center}.summary-card h3{margin:0 0 5px 0;color:#2c3e50}.summary-card .number{font-size:24px;font-weight:bold}.different{color:#e74c3c}.identical{color:#27ae60}.error{color:#f39c12}.content{padding:20px}.file-section{margin-bottom:30px}.file-header{background:#ecf0f1;padding:15px;border-radius:6px;margin-bottom:15px}.file-name{font-weight:bold;color:#2c3e50}.file-status{margin-left:10px;padding:4px 8px;border-radius:4px;font-size:12px;font-weight:bold}.status-different{background:#e74c3c;color:white}.status-identical{background:#27ae60;color:white}.status-error{background:#f39c12;color:white}.differences{margin-top:15px}.difference{background:#f8f9fa;padding:10px;margin:5px 0;border-left:4px solid #3498db;border-radius:0 4px 4px 0}.difference-kind{font-weight:bold;margin-bottom:5px}.added{border-left-color:#27ae60}.removed{border-left-color:#e74c3c}.modified{border-left-color:#f39c12}.no-changes{text-align:center;color:#7f8c8d;padding:40px}.timestamp{color:#7f8c8d;font-size:14px}</style></head>';
+            const bodyStart = '<body><div class="container"><div class="header"><h1>🔍 JSON Comparison Report</h1><p class="timestamp">Generated: ' + timestamp + '</p></div>';
+            const summary = '<div class="summary"><h2>📊 Summary</h2><div class="summary-grid"><div class="summary-card"><h3>Total Files</h3><div class="number">' + results.length + '</div></div><div class="summary-card"><h3>Different</h3><div class="number different">' + differentFiles.length + '</div></div><div class="summary-card"><h3>Identical</h3><div class="number identical">' + identicalFiles.length + '</div></div><div class="summary-card"><h3>Errors</h3><div class="number error">' + errorFiles.length + '</div></div><div class="summary-card"><h3>Ignored</h3><div class="number" style="color:#7f8c8d">' + ignoredFiles.length + '</div></div></div></div>';
+            const contentStart = '<div class="content">';
+            const contentEnd = '</div></div></body></html>';
+            
+            let content = '';
+            
+            if (differentFiles.length > 0) {
+              content += '<div class="file-section"><h2>🚨 Files with Changes (' + differentFiles.length + ')</h2>';
+              differentFiles.forEach(file => {
+                content += '<div class="file-header"><span class="file-name">' + file.file + '</span><span class="file-status status-different">DIFFERENT</span></div><div class="differences">';
+                file.differences.forEach(diff => {
+                  content += '<div class="difference ' + diff.kind + '"><div class="difference-kind">' + diff.kind.toUpperCase() + '</div><div>' + diff.description + '</div></div>';
+                });
+                content += '</div>';
+              });
+              content += '</div>';
+            }
+            
+            if (errorFiles.length > 0) {
+              content += '<div class="file-section"><h2>⚠️ Files with Errors (' + errorFiles.length + ')</h2>';
+              errorFiles.forEach(file => {
+                content += '<div class="file-header"><span class="file-name">' + file.file + '</span><span class="file-status status-error">ERROR</span></div><div class="differences"><div class="difference"><div class="difference-kind">ERROR</div><div>' + file.message + '</div></div></div>';
+              });
+              content += '</div>';
+            }
+            
+            if (identicalFiles.length > 0) {
+              content += '<div class="file-section"><h2>✅ Identical Files (' + identicalFiles.length + ')</h2>';
+              identicalFiles.forEach(file => {
+                content += '<div class="file-header"><span class="file-name">' + file.file + '</span><span class="file-status status-identical">IDENTICAL</span></div>';
+              });
+              content += '</div>';
+            }
+            
+            if (ignoredFiles.length > 0) {
+              content += '<div class="file-section"><h2>ℹ️ Ignored Files (' + ignoredFiles.length + ')</h2><p style="color:#7f8c8d;margin-bottom:20px">These files were skipped because the remote files were not found.</p>';
+              ignoredFiles.forEach(file => {
+                content += '<div class="file-header"><span class="file-name">' + file.file + '</span><span class="file-status" style="background:#7f8c8d;color:white">IGNORED</span></div>';
+              });
+              content += '</div>';
+            }
+            
+            if (results.length === 0) {
+              content += '<div class="no-changes"><h2>📁 No Files Found</h2><p>No JSON files were found in the specified folder.</p></div>';
+            }
+            
+            return header + styles + bodyStart + summary + contentStart + content + contentEnd;
+          }
+
           function generateComparisonReport(results, folderPath, baseUrl) {
             const timestamp = new Date().toISOString();
             const differentFiles = results.filter(r => r.status === 'different');
@@ -452,149 +505,9 @@ jobs:
             const identicalFiles = results.filter(r => r.status === 'identical');
             const ignoredFiles = results.filter(r => r.status === 'ignored');
             
-            return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON Comparison Report</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .header { background: #2c3e50; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
-        .summary { padding: 20px; border-bottom: 1px solid #eee; }
-        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
-        .summary-card { background: #f8f9fa; padding: 15px; border-radius: 6px; text-align: center; }
-        .summary-card h3 { margin: 0 0 5px 0; color: #2c3e50; }
-        .summary-card .number { font-size: 24px; font-weight: bold; }
-        .different { color: #e74c3c; }
-        .identical { color: #27ae60; }
-        .error { color: #f39c12; }
-        .content { padding: 20px; }
-        .file-section { margin-bottom: 30px; }
-        .file-header { background: #ecf0f1; padding: 15px; border-radius: 6px; margin-bottom: 15px; }
-        .file-name { font-weight: bold; color: #2c3e50; }
-        .file-status { margin-left: 10px; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .status-different { background: #e74c3c; color: white; }
-        .status-identical { background: #27ae60; color: white; }
-        .status-error { background: #f39c12; color: white; }
-        .differences { margin-top: 15px; }
-        .difference { background: #f8f9fa; padding: 10px; margin: 5px 0; border-left: 4px solid #3498db; border-radius: 0 4px 4px 0; }
-        .difference-kind { font-weight: bold; margin-bottom: 5px; }
-        .added { border-left-color: #27ae60; }
-        .removed { border-left-color: #e74c3c; }
-        .modified { border-left-color: #f39c12; }
-        .no-changes { text-align: center; color: #7f8c8d; padding: 40px; }
-        .timestamp { color: #7f8c8d; font-size: 14px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🔍 JSON Comparison Report</h1>
-            <p class="timestamp">Generated: ${timestamp}</p>
-        </div>
-        
-        <div class="summary">
-            <h2>📊 Summary</h2>
-            <div class="summary-grid">
-                <div class="summary-card">
-                    <h3>Total Files</h3>
-                    <div class="number">${results.length}</div>
-                </div>
-                <div class="summary-card">
-                    <h3>Different</h3>
-                    <div class="number different">${differentFiles.length}</div>
-                </div>
-                <div class="summary-card">
-                    <h3>Identical</h3>
-                    <div class="number identical">${identicalFiles.length}</div>
-                </div>
-                <div class="summary-card">
-                    <h3>Errors</h3>
-                    <div class="number error">${errorFiles.length}</div>
-                </div>
-                <div class="summary-card">
-                    <h3>Ignored</h3>
-                    <div class="number" style="color: #7f8c8d;">${ignoredFiles.length}</div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="content">
-            ${differentFiles.length > 0 ? `
-            <div class="file-section">
-                <h2>🚨 Files with Changes (${differentFiles.length})</h2>
-                ${differentFiles.map(file => `
-                <div class="file-header">
-                    <span class="file-name">${file.file}</span>
-                    <span class="file-status status-different">DIFFERENT</span>
-                </div>
-                <div class="differences">
-                    ${file.differences.map(diff => `
-                    <div class="difference ${diff.kind}">
-                        <div class="difference-kind">${diff.kind.toUpperCase()}</div>
-                        <div>${diff.description}</div>
-                    </div>
-                    `).join('')}
-                </div>
-                `).join('')}
-            </div>
-            ` : ''}
-            
-            ${errorFiles.length > 0 ? `
-            <div class="file-section">
-                <h2>⚠️ Files with Errors (${errorFiles.length})</h2>
-                ${errorFiles.map(file => `
-                <div class="file-header">
-                    <span class="file-name">${file.file}</span>
-                    <span class="file-status status-error">ERROR</span>
-                </div>
-                <div class="differences">
-                    <div class="difference">
-                        <div class="difference-kind">ERROR</div>
-                        <div>${file.message}</div>
-                    </div>
-                </div>
-                `).join('')}
-            </div>
-            ` : ''}
-            
-            ${identicalFiles.length > 0 ? `
-            <div class="file-section">
-                <h2>✅ Identical Files (${identicalFiles.length})</h2>
-                ${identicalFiles.map(file => `
-                <div class="file-header">
-                    <span class="file-name">${file.file}</span>
-                    <span class="file-status status-identical">IDENTICAL</span>
-                </div>
-                `).join('')}
-            </div>
-            ` : ''}
-            
-            ${ignoredFiles.length > 0 ? `
-            <div class="file-section">
-                <h2>ℹ️ Ignored Files (${ignoredFiles.length})</h2>
-                <p style="color: #7f8c8d; margin-bottom: 20px;">These files were skipped because the remote files were not found.</p>
-                ${ignoredFiles.map(file => `
-                <div class="file-header">
-                    <span class="file-name">${file.file}</span>
-                    <span class="file-status" style="background: #7f8c8d; color: white;">IGNORED</span>
-                </div>
-                `).join('')}
-            </div>
-            ` : ''}
-            
-            ${results.length === 0 ? `
-            <div class="no-changes">
-                <h2>📁 No Files Found</h2>
-                <p>No JSON files were found in the specified folder.</p>
-            </div>
-            ` : ''}
-        </div>
-    </div>
-</body>
-</html>`;
+            // Generate HTML report using a more efficient approach
+            const html = generateHtmlReport(results, differentFiles, errorFiles, identicalFiles, ignoredFiles, timestamp);
+            return html;
           }
 
           // Run the comparison
