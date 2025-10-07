@@ -158,8 +158,8 @@ jobs:
                 }
               }
 
-              // Generate HTML report if there are differences
-              if (hasDifferences || results.some(r => r.status === 'error')) {
+              // Generate HTML report for all results (always generate a report)
+              if (results.length > 0) {
                 reportPath = await generateHtmlReport(results, folderPath, baseUrl);
                 console.log(`📊 HTML report generated: ${reportPath}`);
               }
@@ -233,10 +233,11 @@ jobs:
               const remoteJson = await fetchJsonFromUrl(remoteUrl);
               
               if (!remoteJson) {
+                console.log(`ℹ️ Remote file not found, ignoring: ${remoteUrl}`);
                 return {
                   file: relativePath,
-                  status: 'error',
-                  message: 'Remote file not found or could not be fetched'
+                  status: 'ignored',
+                  message: 'Remote file not found - ignoring'
                 };
               }
               
@@ -368,6 +369,7 @@ jobs:
           function createSlackSummary(results) {
             const differentFiles = results.filter(r => r.status === 'different');
             const errorFiles = results.filter(r => r.status === 'error');
+            const ignoredFiles = results.filter(r => r.status === 'ignored');
             
             let summary = '';
             
@@ -409,10 +411,19 @@ jobs:
               });
             }
             
+            // Show ignored files count (but don't treat as errors)
+            if (ignoredFiles.length > 0) {
+              summary += `\n\nℹ️ Files Ignored (${ignoredFiles.length}):`;
+              summary += `\nRemote files not found - these were skipped during comparison.`;
+            }
+            
             // If no issues, show success message
             if (differentFiles.length === 0 && errorFiles.length === 0) {
               summary += `\n\n✅ All files are up to date!`;
               summary += `\nNo changes found in any configuration files.`;
+              if (ignoredFiles.length > 0) {
+                summary += `\n(${ignoredFiles.length} files were ignored due to missing remote files)`;
+              }
             }
             
             return summary.trim();
@@ -439,6 +450,7 @@ jobs:
             const differentFiles = results.filter(r => r.status === 'different');
             const errorFiles = results.filter(r => r.status === 'error');
             const identicalFiles = results.filter(r => r.status === 'identical');
+            const ignoredFiles = results.filter(r => r.status === 'ignored');
             
             return `<!DOCTYPE html>
 <html lang="en">
@@ -502,6 +514,10 @@ jobs:
                     <h3>Errors</h3>
                     <div class="number error">${errorFiles.length}</div>
                 </div>
+                <div class="summary-card">
+                    <h3>Ignored</h3>
+                    <div class="number" style="color: #7f8c8d;">${ignoredFiles.length}</div>
+                </div>
             </div>
         </div>
         
@@ -551,6 +567,19 @@ jobs:
                 <div class="file-header">
                     <span class="file-name">${file.file}</span>
                     <span class="file-status status-identical">IDENTICAL</span>
+                </div>
+                `).join('')}
+            </div>
+            ` : ''}
+            
+            ${ignoredFiles.length > 0 ? `
+            <div class="file-section">
+                <h2>ℹ️ Ignored Files (${ignoredFiles.length})</h2>
+                <p style="color: #7f8c8d; margin-bottom: 20px;">These files were skipped because the remote files were not found.</p>
+                ${ignoredFiles.map(file => `
+                <div class="file-header">
+                    <span class="file-name">${file.file}</span>
+                    <span class="file-status" style="background: #7f8c8d; color: white;">IGNORED</span>
                 </div>
                 `).join('')}
             </div>
@@ -670,10 +699,10 @@ jobs:
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            📊 *Detailed report attached below*
+            ${{ needs.run-comparison.outputs.report_path != '' && '📊 *Detailed report attached below*' || '📊 *Report:* Check the GitHub Pages deployment for the full report' }}
             
             _Need help? Reply in this channel or contact the team._
-          file-path: ${{ needs.run-comparison.outputs.report_path }}
+          file-path: ${{ needs.run-comparison.outputs.report_path != '' && needs.run-comparison.outputs.report_path || '' }}
 
       - name: 🔔 Slack Alert
         if: ${{ failure() }}
@@ -690,7 +719,7 @@ jobs:
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            📊 *Detailed report attached below*
+            ${{ needs.run-comparison.outputs.report_path != '' && '📊 *Detailed report attached below*' || '📊 *Report:* Check the GitHub Pages deployment for the full report' }}
             
             _Please check the report or contact the team for help._
-          file-path: ${{ needs.run-comparison.outputs.report_path }}
+          file-path: ${{ needs.run-comparison.outputs.report_path != '' && needs.run-comparison.outputs.report_path || '' }}

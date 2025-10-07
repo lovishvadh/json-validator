@@ -93,7 +93,7 @@ jobs:
 
       - name: 📦 Install Dependencies
         run: |
-          npm install @actions/github @actions/exec @slack/web-api deep-diff
+          npm install @actions/github @slack/web-api deep-diff
 
       - name: 🔍 Run JSON Comparison
         id: run_comparison
@@ -104,13 +104,17 @@ jobs:
           # Create the comparison script
           cat > compare-json.js << 'EOF'
           const github = require('@actions/github');
-          const { exec } = require('@actions/exec');
           const { WebClient } = require('@slack/web-api');
           const diff = require('deep-diff');
           const fs = require('fs');
           const path = require('path');
           const https = require('https');
           const http = require('http');
+          const { exec } = require('child_process');
+          const { promisify } = require('util');
+          
+          // Promisify exec for async/await usage
+          const execAsync = promisify(exec);
 
           async function run() {
             try {
@@ -166,6 +170,11 @@ jobs:
                   if (!remoteJson) {
                     console.log(`ℹ️ Remote file not found, ignoring: ${remoteUrl}`);
                     // Skip this file instead of treating it as an error
+                    results.push({
+                      file: jsonFile,
+                      status: 'ignored',
+                      message: 'Remote file not found - ignoring'
+                    });
                     continue;
                   }
                   
@@ -203,9 +212,9 @@ jobs:
                 }
               }
 
-              // Generate HTML report for differences
+              // Generate HTML report for all results (always generate a report)
               let reportPath = null;
-              if (hasDifferences) {
+              if (results.length > 0) {
                 try {
                   const reportData = {
                     folder: folderPath,
@@ -262,7 +271,7 @@ jobs:
 
           async function getCurrentBranch() {
             try {
-              const { stdout } = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+              const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD');
               return stdout.trim();
             } catch (error) {
               return 'unknown';
@@ -787,10 +796,10 @@ jobs:
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            📊 *Detailed report attached below*
+            ${{ needs.run-comparison.outputs.report_path != '' && '📊 *Detailed report attached below*' || '📊 *Report:* Check the GitHub Pages deployment for the full report' }}
             
             _Need help? Reply in this channel or contact the team._
-          file-path: ${{ needs.run-comparison.outputs.report_path }}
+          file-path: ${{ needs.run-comparison.outputs.report_path != '' && needs.run-comparison.outputs.report_path || '' }}
 
       - name: 🔔 Slack Alert
         if: ${{ failure() }}
@@ -807,7 +816,7 @@ jobs:
             
             ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
             
-            📊 *Detailed report attached below*
+            ${{ needs.run-comparison.outputs.report_path != '' && '📊 *Detailed report attached below*' || '📊 *Report:* Check the GitHub Pages deployment for the full report' }}
             
             _Please check the report or contact the team for help._
-          file-path: ${{ needs.run-comparison.outputs.report_path }}
+          file-path: ${{ needs.run-comparison.outputs.report_path != '' && needs.run-comparison.outputs.report_path || '' }}
