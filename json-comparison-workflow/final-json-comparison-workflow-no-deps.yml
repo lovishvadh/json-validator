@@ -547,6 +547,14 @@ jobs:
             echo "slack_summary=No summary available" >> $GITHUB_OUTPUT
           fi
 
+      - name: 📤 Upload Report Artifact
+        if: ${{ steps.run_comparison.outputs.report_path != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: json-comparison-report
+          path: ${{ steps.run_comparison.outputs.report_path }}
+          retention-days: 1
+
   generate-html-report:
     needs: [log-inputs, run-comparison]
     runs-on: ubuntu-latest
@@ -574,17 +582,25 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 📥 Download Report Artifact
+        if: ${{ needs.run-comparison.outputs.report_path != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: json-comparison-report
+          path: ./artifacts
+
       - name: 📊 Copy Reports to docs folder
         run: |
           # Create docs directory if it doesn't exist
           mkdir -p docs
           
           # Copy the generated report to the docs folder
-          if [ -f "${{ needs.run-comparison.outputs.report_path }}" ]; then
-            cp "${{ needs.run-comparison.outputs.report_path }}" docs/
+          if [ -d "./artifacts" ] && [ "$(ls -A ./artifacts)" ]; then
+            cp ./artifacts/*.html docs/
             echo "📊 Report copied to docs directory"
+            ls -la docs/
           else
-            echo "⚠️ No report file found to copy"
+            echo "⚠️ No report artifact found to copy"
           fi
 
       - name: 📝 Commit and Push Reports
