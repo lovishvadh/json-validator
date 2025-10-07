@@ -160,8 +160,18 @@ jobs:
 
               // Generate HTML report for all results (always generate a report)
               if (results.length > 0) {
+                console.log(`📊 Generating HTML report for ${results.length} results...`);
                 reportPath = await generateAndSaveReport(results, folderPath, baseUrl);
                 console.log(`📊 HTML report generated: ${reportPath}`);
+                
+                // Verify the file was created
+                if (fs.existsSync(reportPath)) {
+                  console.log(`✅ Report file verified: ${reportPath}`);
+                } else {
+                  console.log(`❌ Report file not found: ${reportPath}`);
+                }
+              } else {
+                console.log(`⚠️ No results to generate report for`);
               }
 
               // Set outputs
@@ -436,10 +446,12 @@ jobs:
             const docsDir = 'docs';
             if (!fs.existsSync(docsDir)) {
               fs.mkdirSync(docsDir, { recursive: true });
+              console.log(`📁 Created docs directory: ${docsDir}`);
             }
             
             const html = generateComparisonReport(results, folderPath, baseUrl);
             fs.writeFileSync(reportPath, html);
+            console.log(`📊 Report saved to: ${reportPath}`);
             
             return reportPath;
           }
@@ -547,6 +559,23 @@ jobs:
             echo "slack_summary=No summary available" >> $GITHUB_OUTPUT
           fi
 
+      - name: 🔍 Debug Report File
+        run: |
+          echo "🔍 Debug: report_path = '${{ steps.run_comparison.outputs.report_path }}'"
+          if [ -f "${{ steps.run_comparison.outputs.report_path }}" ]; then
+            echo "✅ Report file exists"
+            ls -la "${{ steps.run_comparison.outputs.report_path }}"
+          else
+            echo "❌ Report file does not exist"
+            echo "🔍 Checking docs directory:"
+            if [ -d "docs" ]; then
+              echo "✅ Docs directory exists"
+              ls -la docs/
+            else
+              echo "❌ Docs directory does not exist"
+            fi
+          fi
+
       - name: 📤 Upload Report Artifact
         if: ${{ steps.run_comparison.outputs.report_path != '' }}
         uses: actions/upload-artifact@v4
@@ -582,6 +611,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 🔍 Debug Report Path
+        run: |
+          echo "🔍 Debug: report_path = '${{ needs.run-comparison.outputs.report_path }}'"
+          echo "🔍 Debug: report_path length = ${#{{ needs.run-comparison.outputs.report_path }}}"
+
       - name: 📥 Download Report Artifact
         if: ${{ needs.run-comparison.outputs.report_path != '' }}
         uses: actions/download-artifact@v4
@@ -590,9 +624,21 @@ jobs:
           path: ./artifacts
 
       - name: 📊 Copy Reports to docs folder
+        if: ${{ needs.run-comparison.outputs.report_path != '' }}
         run: |
           # Create docs directory if it doesn't exist
           mkdir -p docs
+          
+          # Debug: Check what's in the current directory
+          echo "🔍 Debug: Current directory contents:"
+          ls -la
+          echo "🔍 Debug: Artifacts directory check:"
+          if [ -d "./artifacts" ]; then
+            echo "✅ Artifacts directory exists"
+            ls -la ./artifacts/
+          else
+            echo "❌ Artifacts directory does not exist"
+          fi
           
           # Copy the generated report to the docs folder
           if [ -d "./artifacts" ] && [ "$(ls -A ./artifacts)" ]; then
@@ -604,6 +650,7 @@ jobs:
           fi
 
       - name: 📝 Commit and Push Reports
+        if: ${{ needs.run-comparison.outputs.report_path != '' }}
         run: |
           # Configure git
           git config --local user.email "action@github.com"
