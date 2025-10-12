@@ -564,32 +564,40 @@ jobs:
             echo "slack_summary=No summary available" >> $GITHUB_OUTPUT
           fi
 
-      - name: 🔍 Debug Report File
+      - name: 📤 Upload Report to GitHub Gist
+        if: ${{ steps.run_comparison.outputs.report_path != '' }}
+        id: upload_gist
         run: |
-          echo "🔍 Debug: report_path = '${{ steps.run_comparison.outputs.report_path }}'"
           if [ -f "${{ steps.run_comparison.outputs.report_path }}" ]; then
-            echo "✅ Report file exists"
-            ls -la "${{ steps.run_comparison.outputs.report_path }}"
+            echo "📤 Uploading report to GitHub Gist..."
+            
+            # Create Gist using GitHub API
+            GIST_RESPONSE=$(curl -s -X POST https://api.github.com/gists \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d @- << EOF
+            {
+              "description": "JSON Comparison Report - ${{ needs.log-inputs.outputs.folder_path }} - $(date)",
+              "public": false,
+              "files": {
+                "json-comparison-report.html": {
+                  "content": $(jq -Rs . < ${{ steps.run_comparison.outputs.report_path }})
+                }
+              }
+            }
+            EOF
+            )
+            
+            # Extract Gist URL
+            GIST_URL=$(echo "$GIST_RESPONSE" | jq -r '.html_url')
+            echo "gist_url=$GIST_URL" >> $GITHUB_OUTPUT
+            echo "✅ Report uploaded to Gist: $GIST_URL"
           else
-            echo "❌ Report file does not exist"
+            echo "❌ Report file not found, skipping Gist upload"
+            echo "gist_url=" >> $GITHUB_OUTPUT
           fi
 
-      - name: 🔍 Final Debug Before Slack
-        run: |
-          echo "🔍 Final checks before sending to Slack:"
-          echo "  - report_path: '${{ steps.run_comparison.outputs.report_path }}'"
-          echo "  - Current directory:"
-          ls -la
-          echo "  - Checking file existence:"
-          if [ -f "${{ steps.run_comparison.outputs.report_path }}" ]; then
-            echo "  ✅ Report file exists!"
-            echo "  - File size: $(ls -lh ${{ steps.run_comparison.outputs.report_path }} | awk '{print $5}')"
-          else
-            echo "  ❌ Report file NOT found!"
-          fi
-
-      - name: 🔔 Send Slack Notification with Report
-        if: ${{ steps.run_comparison.outputs.report_path != '' && steps.run_comparison.outputs.report_path != 'undefined' }}
+      - name: 🔔 Send Slack Notification
         uses: amex-eng/github-actions-slack@v1.1.0
         with:
           slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
@@ -603,27 +611,7 @@ jobs:
             
             ${{ steps.run_comparison.outputs.slack_summary }}
             
-            📊 *Detailed HTML report attached below*
-            
-            _Need help? Reply in this channel or contact the team._
-          file-path: ${{ steps.run_comparison.outputs.report_path }}
-
-      - name: 🔔 Send Slack Notification without Report
-        if: ${{ steps.run_comparison.outputs.report_path == '' || steps.run_comparison.outputs.report_path == 'undefined' }}
-        uses: amex-eng/github-actions-slack@v1.1.0
-        with:
-          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
-          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
-          slack-text: |
-            🔍 *Configuration Check Complete*
-            
-            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
-            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
-            ⏰ *Checked at:* `${{ steps.run_comparison.outputs.startedAt }}`
-            
-            ${{ steps.run_comparison.outputs.slack_summary }}
-            
-            📊 *Report:* No detailed report generated
+            ${{ steps.upload_gist.outputs.gist_url != '' && format('📊 *View Detailed Report:* {0}', steps.upload_gist.outputs.gist_url) || '📊 *Report:* No detailed report available' }}
             
             _Need help? Reply in this channel or contact the team._
 
