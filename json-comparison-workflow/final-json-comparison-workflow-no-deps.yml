@@ -160,15 +160,30 @@ jobs:
 
               // Generate HTML report content for Slack
               if (results.length > 0) {
-                console.log(`📊 Generating HTML report content for ${results.length} results...`);
-                const htmlContent = generateComparisonReport(results, folderPath, baseUrl);
-                console.log(`📊 HTML report content generated (${htmlContent.length} characters)`);
-                
-                // Save HTML content to a file for Slack attachment
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                reportPath = `json-comparison-report-${timestamp}.html`;
-                fs.writeFileSync(reportPath, htmlContent);
-                console.log(`📊 HTML report saved to: ${reportPath}`);
+                try {
+                  console.log(`📊 Generating HTML report content for ${results.length} results...`);
+                  const htmlContent = generateComparisonReport(results, folderPath, baseUrl);
+                  console.log(`📊 HTML report content generated (${htmlContent.length} characters)`);
+                  
+                  // Save HTML content to a file for Slack attachment
+                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                  reportPath = `json-comparison-report-${timestamp}.html`;
+                  console.log(`📁 Writing report to: ${reportPath}`);
+                  fs.writeFileSync(reportPath, htmlContent);
+                  console.log(`📊 HTML report saved to: ${reportPath}`);
+                  
+                  // Verify the file was created
+                  if (fs.existsSync(reportPath)) {
+                    const stats = fs.statSync(reportPath);
+                    console.log(`✅ Report file verified: ${stats.size} bytes`);
+                  } else {
+                    console.log(`❌ ERROR: Report file not found after write!`);
+                    reportPath = null;
+                  }
+                } catch (error) {
+                  console.log(`❌ ERROR generating HTML report: ${error.message}`);
+                  reportPath = null;
+                }
               } else {
                 console.log(`⚠️ No results to generate report for`);
               }
@@ -385,7 +400,10 @@ jobs:
             if (differentFiles.length > 0) {
               summary += `🚨 Files with Changes (${differentFiles.length}):`;
               
-              differentFiles.forEach((file, index) => {
+              // Show first 5 files only
+              const filesToShow = differentFiles.slice(0, 5);
+              
+              filesToShow.forEach((file, index) => {
                 // Add line break before each file and make file names bold
                 const safeFileName = file.file.replace(/[*_`]/g, '\\$&');
                 summary += `\n\n${index + 1}. *${safeFileName}*`;
@@ -406,6 +424,11 @@ jobs:
                   summary += `\n... and ${file.differences.length - 3} more changes`;
                 }
               });
+              
+              // Show count of remaining files
+              if (differentFiles.length > 5) {
+                summary += `\n\n... and ${differentFiles.length - 5} more files with differences`;
+              }
             }
             
             if (errorFiles.length > 0) {
