@@ -109,6 +109,9 @@ jobs:
               const ignoreKeys = process.env.IGNORE_KEYS ? process.env.IGNORE_KEYS.split(',').map(k => k.trim()) : [];
               const fileExtensions = process.env.FILE_EXTENSIONS ? process.env.FILE_EXTENSIONS.split(',').map(e => e.trim()) : ['json'];
               const recursive = process.env.RECURSIVE === 'true';
+              
+              // Initialize reportPath
+              let reportPath = null;
 
               console.log(`🔍 Scanning folder: ${folderPath}`);
               console.log(`🌐 Base URL: ${baseUrl}`);
@@ -158,34 +161,41 @@ jobs:
                 }
               }
 
-              // Generate HTML report content for Slack
-              if (results.length > 0) {
-                try {
-                  console.log(`📊 Generating HTML report content for ${results.length} results...`);
-                  const htmlContent = generateComparisonReport(results, folderPath, baseUrl);
-                  console.log(`📊 HTML report content generated (${htmlContent.length} characters)`);
-                  
-                  // Save HTML content to a file for Slack attachment
-                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-                  reportPath = `json-comparison-report-${timestamp}.html`;
-                  console.log(`📁 Writing report to: ${reportPath}`);
-                  fs.writeFileSync(reportPath, htmlContent);
-                  console.log(`📊 HTML report saved to: ${reportPath}`);
-                  
-                  // Verify the file was created
-                  if (fs.existsSync(reportPath)) {
-                    const stats = fs.statSync(reportPath);
-                    console.log(`✅ Report file verified: ${stats.size} bytes`);
-                  } else {
-                    console.log(`❌ ERROR: Report file not found after write!`);
-                    reportPath = null;
-                  }
-                } catch (error) {
-                  console.log(`❌ ERROR generating HTML report: ${error.message}`);
+              // Log results summary
+              console.log(`\n📊 Results Summary:`);
+              console.log(`  - Total results: ${results.length}`);
+              console.log(`  - Different: ${results.filter(r => r.status === 'different').length}`);
+              console.log(`  - Identical: ${results.filter(r => r.status === 'identical').length}`);
+              console.log(`  - Ignored: ${results.filter(r => r.status === 'ignored').length}`);
+              console.log(`  - Errors: ${results.filter(r => r.status === 'error').length}`);
+              
+              // ALWAYS generate HTML report (even if no differences)
+              console.log(`\n📊 Starting HTML report generation...`);
+              try {
+                console.log(`📊 Generating HTML report content for ${results.length} results...`);
+                const htmlContent = generateComparisonReport(results, folderPath, baseUrl);
+                console.log(`📊 HTML report content generated (${htmlContent.length} characters)`);
+                
+                // Save HTML content to a file for Slack attachment
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                reportPath = `json-comparison-report-${timestamp}.html`;
+                console.log(`📁 Writing report to: ${reportPath}`);
+                fs.writeFileSync(reportPath, htmlContent);
+                console.log(`📊 HTML report saved to: ${reportPath}`);
+                
+                // Verify the file was created
+                if (fs.existsSync(reportPath)) {
+                  const stats = fs.statSync(reportPath);
+                  console.log(`✅ Report file verified: ${stats.size} bytes`);
+                  console.log(`✅ Report path is: ${reportPath}`);
+                } else {
+                  console.log(`❌ ERROR: Report file not found after write!`);
                   reportPath = null;
                 }
-              } else {
-                console.log(`⚠️ No results to generate report for`);
+              } catch (error) {
+                console.log(`❌ ERROR generating HTML report: ${error.message}`);
+                console.log(`❌ Error stack: ${error.stack}`);
+                reportPath = null;
               }
 
               // Set outputs
