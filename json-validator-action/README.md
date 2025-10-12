@@ -7,6 +7,7 @@ A powerful GitHub Action that automatically validates JSON files in pull request
 - ✅ **Automatic Detection**: Finds JSON files changed in pull requests
 - 🔍 **Detailed Error Reporting**: Shows exact line numbers, positions, and helpful suggestions
 - 🚫 **Duplicate Key Detection**: Identifies duplicate keys at the same level (ignores valid duplicates in arrays)
+- 🏷️ **HTML Validation**: Validates HTML strings within JSON values, ensuring all tags are properly closed
 - 📍 **Context-Aware**: Provides specific context for each error type
 - 🤖 **GitHub Integration**: Creates status checks and PR comments
 - 🛡️ **Branch Protection**: Can be used as a required status check
@@ -135,6 +136,19 @@ permissions:
    💡 Suggestion: Check for missing commas(,), extra commas(,), missing quotes("), extra quotes("), or incorrect syntax around the indicated position.
 ```
 
+### 🏷️ HTML Validation Error
+```
+❌ JSON Validation Error in content.json:
+   Error Type: InvalidHTMLError
+   Error Message: HTML string contains unclosed or mismatched tags: div, p
+   🔍 HTML Validation Details:
+      Key Path: page.content
+      Line: 12
+      Unclosed Tags: div, p
+      HTML Content Preview: <div><p>Welcome to our site<div><span>More content</span>
+   💡 Suggestion: Ensure all HTML tags are properly closed. Unclosed tags: <div>...</div>, <p>...</p>
+```
+
 ## 🔧 Error Types Detected
 
 ### 1. Syntax Errors
@@ -149,7 +163,13 @@ permissions:
 - Duplicate keys at the same level (invalid)
 - Allows duplicate keys in different array elements (valid)
 
-### 3. File Access Issues
+### 3. HTML Validation Errors
+- Unclosed HTML tags (e.g., `<div>` without `</div>`)
+- Mismatched HTML tags (e.g., `<span></div>`)
+- Properly handles self-closing tags (e.g., `<br/>`, `<img/>`)
+- Validates HTML in nested objects and arrays
+
+### 4. File Access Issues
 - Missing files
 - Permission errors
 - Network connectivity issues

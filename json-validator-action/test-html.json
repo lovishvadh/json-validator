@@ -1,0 +1,15 @@
+{
+  "validHTML": "<div><p>Hello World</p></div>",
+  "invalidHTML": "<div><p>Unclosed paragraph<div>",
+  "selfClosing": "<img src='test.jpg' /><br />Valid self-closing",
+  "nestedArray": [
+    {
+      "content": "<span>This is valid</span>"
+    },
+    {
+      "content": "<h1>Missing closing tag"
+    }
+  ],
+  "complexValid": "<div class='container'><ul><li>Item 1</li><li>Item 2</li></ul></div>",
+  "complexInvalid": "<div><span><strong>Mismatched</span></strong></div>"
+}

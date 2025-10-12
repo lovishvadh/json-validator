@@ -551,6 +551,59 @@ jobs:
             echo "❌ Report file does not exist"
           fi
 
+      - name: 🔍 Final Debug Before Slack
+        run: |
+          echo "🔍 Final checks before sending to Slack:"
+          echo "  - report_path: '${{ steps.run_comparison.outputs.report_path }}'"
+          echo "  - Current directory:"
+          ls -la
+          echo "  - Checking file existence:"
+          if [ -f "${{ steps.run_comparison.outputs.report_path }}" ]; then
+            echo "  ✅ Report file exists!"
+            echo "  - File size: $(ls -lh ${{ steps.run_comparison.outputs.report_path }} | awk '{print $5}')"
+          else
+            echo "  ❌ Report file NOT found!"
+          fi
+
+      - name: 🔔 Send Slack Notification with Report
+        if: ${{ steps.run_comparison.outputs.report_path != '' && steps.run_comparison.outputs.report_path != 'undefined' }}
+        uses: amex-eng/github-actions-slack@v1.1.0
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
+          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
+          slack-text: |
+            🔍 *Configuration Check Complete*
+            
+            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
+            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
+            ⏰ *Checked at:* `${{ steps.run_comparison.outputs.startedAt }}`
+            
+            ${{ steps.run_comparison.outputs.slack_summary }}
+            
+            📊 *Detailed HTML report attached below*
+            
+            _Need help? Reply in this channel or contact the team._
+          file-path: ${{ steps.run_comparison.outputs.report_path }}
+
+      - name: 🔔 Send Slack Notification without Report
+        if: ${{ steps.run_comparison.outputs.report_path == '' || steps.run_comparison.outputs.report_path == 'undefined' }}
+        uses: amex-eng/github-actions-slack@v1.1.0
+        with:
+          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
+          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
+          slack-text: |
+            🔍 *Configuration Check Complete*
+            
+            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
+            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
+            ⏰ *Checked at:* `${{ steps.run_comparison.outputs.startedAt }}`
+            
+            ${{ steps.run_comparison.outputs.slack_summary }}
+            
+            📊 *Report:* No detailed report generated
+            
+            _Need help? Reply in this channel or contact the team._
+
   generate-html-report:
     needs: [log-inputs, run-comparison]
     runs-on: ubuntu-latest
@@ -567,87 +620,3 @@ jobs:
         continue-on-error: true
 
 
-  slack-notification:
-    needs: [log-inputs, run-comparison, generate-html-report]
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: 🔔 Slack Alert (with report)
-        if: ${{ success() && needs.run-comparison.outputs.report_path != '' }}
-        uses: amex-eng/github-actions-slack@v1.1.0
-        id: notify_with_report
-        with:
-          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
-          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
-          slack-text: |
-            🔍 *Configuration Check Complete*
-            
-            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
-            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
-            ⏰ *Checked at:* `${{ needs.run-comparison.outputs.startedAt }}`
-            
-            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
-            
-            📊 *Detailed report attached below*
-            
-            _Need help? Reply in this channel or contact the team._
-          file-path: ${{ needs.run-comparison.outputs.report_path }}
-
-      - name: 🔔 Slack Alert (without report)
-        if: ${{ success() && needs.run-comparison.outputs.report_path == '' }}
-        uses: amex-eng/github-actions-slack@v1.1.0
-        id: notify_without_report
-        with:
-          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
-          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
-          slack-text: |
-            🔍 *Configuration Check Complete*
-            
-            📁 *What was checked:* `${{ needs.log-inputs.outputs.folder_path }}`
-            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
-            ⏰ *Checked at:* `${{ needs.run-comparison.outputs.startedAt }}`
-            
-            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
-            
-            📊 *Report:* HTML report attached below for detailed analysis
-            
-            _Need help? Reply in this channel or contact the team._
-
-      - name: 🔔 Slack Alert (failure with report)
-        if: ${{ failure() && needs.run-comparison.outputs.report_path != '' }}
-        uses: amex-eng/github-actions-slack@v1.1.0
-        with:
-          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
-          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
-          slack-text: |
-            ❌ *Configuration Check Failed*
-            
-            📁 *What was being checked:* `${{ needs.log-inputs.outputs.folder_path }}`
-            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
-            ⏰ *Failed at:* `${{ needs.run-comparison.outputs.startedAt }}`
-            
-            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
-            
-            📊 *Detailed report attached below*
-            
-            _Please check the report or contact the team for help._
-          file-path: ${{ needs.run-comparison.outputs.report_path }}
-
-      - name: 🔔 Slack Alert (failure without report)
-        if: ${{ failure() && needs.run-comparison.outputs.report_path == '' }}
-        uses: amex-eng/github-actions-slack@v1.1.0
-        with:
-          slack-bot-user-oauth-access-token: ${{ secrets.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN }}
-          slack-channel: ${{ needs.log-inputs.outputs.slack_channel }}
-          slack-text: |
-            ❌ *Configuration Check Failed*
-            
-            📁 *What was being checked:* `${{ needs.log-inputs.outputs.folder_path }}`
-            🌐 *Source:* `${{ needs.log-inputs.outputs.base_url }}`
-            ⏰ *Failed at:* `${{ needs.run-comparison.outputs.startedAt }}`
-            
-            ${{ needs.run-comparison.outputs.slack_summary || 'No detailed summary available. Check the full report for details.' }}
-            
-            📊 *Report:* HTML report attached below for detailed analysis
-            
-            _Please check the report or contact the team for help._

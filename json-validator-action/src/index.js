@@ -224,6 +224,7 @@ ${output}
     const errorCount = (output.match(/❌.*JSON Validation Error/g) || []).length;
     const duplicateCount = (output.match(/DuplicateKeyError/g) || []).length;
     const syntaxCount = (output.match(/SyntaxError/g) || []).length;
+    const htmlCount = (output.match(/InvalidHTMLError/g) || []).length;
     
     return `## ❌ JSON Validation Results
 
@@ -243,6 +244,7 @@ ${fileList}
 - **Total Errors**: ${errorCount}
 - **Duplicate Keys**: ${duplicateCount}
 - **Syntax Errors**: ${syntaxCount}
+- **Invalid HTML**: ${htmlCount}
 
 ### 🚨 Issues Found
 ${formatErrorSummary(output)}
@@ -300,7 +302,12 @@ function formatErrorSummary(output) {
   }
   
   return errors.map(error => {
-    const icon = error.type === 'DuplicateKeyError' ? '🔑' : '⚠️';
+    let icon = '⚠️';
+    if (error.type === 'DuplicateKeyError') {
+      icon = '🔑';
+    } else if (error.type === 'InvalidHTMLError') {
+      icon = '🏷️';
+    }
     return `- ${icon} **${error.file}** (Line ${error.line}) - ${error.type}`;
   }).join('\n');
 }

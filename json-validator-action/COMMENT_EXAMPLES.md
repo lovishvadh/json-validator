@@ -60,14 +60,16 @@ When JSON files have errors, the comment will look like this:
 ### 📊 Summary
 - **Status**: ❌ **FAILED**
 - **Files Checked**: 2
-- **Total Errors**: 3
+- **Total Errors**: 4
 - **Duplicate Keys**: 1
 - **Syntax Errors**: 2
+- **Invalid HTML**: 1
 
 ### 🚨 Issues Found
 - 🔑 **config.json** (Line 5) - DuplicateKeyError
 - ⚠️ **data/settings.json** (Line 12) - SyntaxError
 - ⚠️ **data/settings.json** (Line 18) - SyntaxError
+- 🏷️ **data/settings.json** (Line 25) - InvalidHTMLError
 
 <details>
 <summary>📋 View Full Error Details</summary>
@@ -96,6 +98,16 @@ When JSON files have errors, the comment will look like this:
    Character: 2
    Error Line: 12:   "category": "Electronics"
    💡 Suggestion: Check for missing commas(,), extra commas(,), missing quotes("), extra quotes("), or incorrect syntax around the indicated position.
+
+❌ JSON Validation Error in data/settings.json:
+   Error Type: InvalidHTMLError
+   Error Message: HTML string contains unclosed or mismatched tags: div, p
+   🔍 HTML Validation Details:
+      Key Path: page.content
+      Line: 25
+      Unclosed Tags: div, p
+      HTML Content Preview: <div><p>Welcome to our site<div><span>More content</span>
+   💡 Suggestion: Ensure all HTML tags are properly closed. Unclosed tags: <div>...</div>, <p>...</p>
 
 ❌ Validation completed with errors. Please fix the issues above.
 ```
@@ -132,7 +144,7 @@ When JSON files have errors, the comment will look like this:
 ### 🔍 **Smart Parsing**
 - **Automatic error counting** by type
 - **File-specific error mapping** with line numbers
-- **Icon-based categorization** (🔑 for duplicates, ⚠️ for syntax)
+- **Icon-based categorization** (🔑 for duplicates, ⚠️ for syntax, 🏷️ for HTML)
 - **Collapsible full details** to avoid overwhelming users
 
 ### 🚀 **User Experience**

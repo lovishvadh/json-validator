@@ -25,7 +25,26 @@ function validateJSON(content, filename) {
     }
     
     try {
-        JSON.parse(content);
+        const parsedData = JSON.parse(content);
+        
+        // Check for invalid HTML in string values
+        const htmlErrors = validateHTMLInJSON(parsedData, content, filename);
+        if (htmlErrors.length > 0) {
+            htmlErrors.forEach(error => {
+                console.error(`\n❌ JSON Validation Error in ${filename}:`);
+                console.error(`   Error Type: InvalidHTMLError`);
+                console.error(`   Error Message: ${error.message}`);
+                console.error(`   🔍 HTML Validation Details:`);
+                console.error(`      Key Path: ${error.path}`);
+                console.error(`      Line: ${error.line}`);
+                console.error(`      Unclosed Tags: ${error.unclosedTags.join(', ')}`);
+                console.error(`      HTML Content Preview: ${error.preview}`);
+                console.error(`   💡 Suggestion: ${error.suggestion}`);
+                console.error('');
+            });
+            return true;
+        }
+        
         console.log(`✅ ${filename} is a valid JSON.`);
         return false;
     } catch (error) {
@@ -246,6 +265,141 @@ function getErrorSuggestion(errorMessage) {
     }
     
     return 'Review the JSON syntax around the indicated position. Common issues include missing commas, extra commas, or unclosed brackets/braces.';
+}
+
+function validateHTMLInJSON(data, content, filename, path = '', errors = []) {
+    if (typeof data === 'string') {
+        // Check if the string contains HTML tags
+        if (containsHTML(data)) {
+            const htmlValidation = validateHTML(data);
+            if (!htmlValidation.isValid) {
+                const lineNumber = findLineNumberForPath(content, path, data);
+                errors.push({
+                    path: path || 'root',
+                    line: lineNumber,
+                    message: htmlValidation.message,
+                    unclosedTags: htmlValidation.unclosedTags,
+                    preview: data.length > 100 ? data.substring(0, 100) + '...' : data,
+                    suggestion: htmlValidation.suggestion
+                });
+            }
+        }
+    } else if (Array.isArray(data)) {
+        data.forEach((item, index) => {
+            validateHTMLInJSON(item, content, filename, `${path}[${index}]`, errors);
+        });
+    } else if (typeof data === 'object' && data !== null) {
+        Object.keys(data).forEach(key => {
+            const newPath = path ? `${path}.${key}` : key;
+            validateHTMLInJSON(data[key], content, filename, newPath, errors);
+        });
+    }
+    
+    return errors;
+}
+
+function containsHTML(str) {
+    // Check if string contains HTML tags
+    const htmlTagPattern = /<\/?[a-z][\s\S]*>/i;
+    return htmlTagPattern.test(str);
+}
+
+function validateHTML(htmlString) {
+    // Self-closing tags that don't need closing tags
+    const selfClosingTags = ['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 
+                             'link', 'meta', 'param', 'source', 'track', 'wbr'];
+    
+    // Extract all tags from the HTML string
+    const tagPattern = /<\/?([a-z][a-z0-9]*)\b[^>]*>/gi;
+    const tags = [];
+    let match;
+    
+    while ((match = tagPattern.exec(htmlString)) !== null) {
+        const fullTag = match[0];
+        const tagName = match[1].toLowerCase();
+        const isClosing = fullTag.startsWith('</');
+        const isSelfClosing = fullTag.endsWith('/>') || selfClosingTags.includes(tagName);
+        
+        tags.push({
+            name: tagName,
+            isClosing: isClosing,
+            isSelfClosing: isSelfClosing,
+            fullTag: fullTag
+        });
+    }
+    
+    // Stack to track opening tags
+    const stack = [];
+    const unclosedTags = [];
+    
+    for (const tag of tags) {
+        if (tag.isSelfClosing && !tag.isClosing) {
+            // Self-closing tags don't need to be tracked
+            continue;
+        }
+        
+        if (tag.isClosing) {
+            // Closing tag
+            if (stack.length === 0) {
+                unclosedTags.push(tag.name);
+            } else if (stack[stack.length - 1].name === tag.name) {
+                stack.pop();
+            } else {
+                // Mismatched closing tag
+                unclosedTags.push(tag.name);
+            }
+        } else {
+            // Opening tag
+            stack.push(tag);
+        }
+    }
+    
+    // Any remaining tags in the stack are unclosed
+    stack.forEach(tag => {
+        unclosedTags.push(tag.name);
+    });
+    
+    if (unclosedTags.length > 0) {
+        return {
+            isValid: false,
+            message: `HTML string contains unclosed or mismatched tags: ${unclosedTags.join(', ')}`,
+            unclosedTags: [...new Set(unclosedTags)],
+            suggestion: `Ensure all HTML tags are properly closed. Unclosed tags: ${[...new Set(unclosedTags)].map(t => `<${t}>...</${t}>`).join(', ')}`
+        };
+    }
+    
+    return {
+        isValid: true,
+        message: 'HTML is valid',
+        unclosedTags: [],
+        suggestion: ''
+    };
+}
+
+function findLineNumberForPath(content, path, value) {
+    // Try to find the line number where this value appears
+    const lines = content.split('\n');
+    const searchValue = JSON.stringify(value);
+    
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes(searchValue) || lines[i].includes(value)) {
+            return i + 1;
+        }
+    }
+    
+    // If not found, try to find by path
+    const pathParts = path.split('.');
+    const lastKey = pathParts[pathParts.length - 1];
+    
+    if (lastKey) {
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes(`"${lastKey}"`)) {
+                return i + 1;
+            }
+        }
+    }
+    
+    return 0;
 }
 
 // Main validation logic
