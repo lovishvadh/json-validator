@@ -578,32 +578,42 @@ jobs:
         if: ${{ steps.run_comparison.outputs.report_path != '' }}
         id: upload_gist
         run: |
-          if [ -f "${{ steps.run_comparison.outputs.report_path }}" ]; then
+          REPORT_FILE="${{ steps.run_comparison.outputs.report_path }}"
+          
+          if [ -f "$REPORT_FILE" ]; then
             echo "📤 Uploading report to GitHub Gist..."
             
-            # Create Gist using GitHub API
+            # Read report content and escape for JSON
+            REPORT_CONTENT=$(cat "$REPORT_FILE" | jq -Rs .)
+            
+            # Create Gist JSON payload
+            cat > gist_payload.json << EOFPAYLOAD
+          {
+            "description": "JSON Comparison Report - ${{ needs.log-inputs.outputs.folder_path }}",
+            "public": false,
+            "files": {
+              "json-comparison-report.html": {
+                "content": $REPORT_CONTENT
+              }
+            }
+          }
+          EOFPAYLOAD
+            
+            # Upload to Gist
             GIST_RESPONSE=$(curl -s -X POST https://api.github.com/gists \
               -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              -d @- << EOF
-            {
-              "description": "JSON Comparison Report - ${{ needs.log-inputs.outputs.folder_path }} - $(date)",
-              "public": false,
-              "files": {
-                "json-comparison-report.html": {
-                  "content": $(jq -Rs . < ${{ steps.run_comparison.outputs.report_path }})
-                }
-              }
-            }
-            EOF
-            )
+              -d @gist_payload.json)
             
             # Extract Gist URL
             GIST_URL=$(echo "$GIST_RESPONSE" | jq -r '.html_url')
             echo "gist_url=$GIST_URL" >> $GITHUB_OUTPUT
             echo "✅ Report uploaded to Gist: $GIST_URL"
+            
+            # Cleanup
+            rm -f gist_payload.json
           else
-            echo "❌ Report file not found, skipping Gist upload"
+            echo "❌ Report file not found: $REPORT_FILE"
             echo "gist_url=" >> $GITHUB_OUTPUT
           fi
 
